@@ -141,11 +141,14 @@ immer passend zur Server-Version), meldet ihn an und registriert einen Dienst.
 **Scheduling (selbstheilend):**
 - **Linux (systemd):** Dauer-Loop `argus-agent run` mit `Restart=always` — stirbt
   der Prozess, startet systemd ihn neu.
-- **Windows (Scheduled Task):** `argus-agent run --once` pro Aufruf (ein Push,
-  dann Ende); der Task feuert **stündlich** plus bei Systemstart, mit
-  *StartWhenAvailable* (holt nach Standby/Ruhezustand nach) und Neustart bei
-  Fehler. Der OS-Scheduler treibt den Takt und belebt den Agenten wieder — ein
-  einzelner Dauerprozess (alt) blieb nach Absturz/Standby bis zum Reboot tot.
+- **Windows (Scheduled Task):** Herzschlag-Modell. Der Task feuert alle **15 min**
+  (plus bei Systemstart) `argus-agent run --once`; der **Agent selbst** prüft, ob
+  sein (zentral setzbares) Intervall abgelaufen ist — sonst beendet er sich ohne
+  Push. Mit *StartWhenAvailable* (holt nach Standby/Ruhezustand nach) und Neustart
+  bei Fehler. So lebt die Taktung in der Agent-Config statt in der Task-Definition,
+  und der Agent ist gegen Absturz/Standby/Reboot selbstheilend. Der Task läuft als
+  SYSTEM und bekommt `ARGUS_AGENT_CONFIG` (Maschinen-Variable) auf die Enrollment-
+  Datei gesetzt, sonst fände er sie nicht.
 Der Server kann über die Poll-Antwort steuern (rescan, Intervall, Portliste,
 zu scannende **Subnetze/Hosts** (`targets`, zentral auf der System-Seite setzbar),
 Collector-Config) und meldet Agent-Updates. Die zentral gesetzte Config wird im

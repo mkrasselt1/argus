@@ -437,23 +437,29 @@ function Install-ArgusAgent {{
   python -m venv "$Dir\\venv"
   & "$Dir\\venv\\Scripts\\python.exe" -m pip install -q --upgrade pip 2>$null
   & "$Dir\\venv\\Scripts\\pip.exe" install -q "$Server/dist/argus-agent.tar.gz"
+  # The scheduled task runs as SYSTEM, so point the agent at the config file
+  # join writes to. Without this the task would look in SYSTEM's profile and
+  # never find the enrollment (the agent would only ever work when run by hand).
+  [Environment]::SetEnvironmentVariable("ARGUS_AGENT_CONFIG", "$Dir\\agent.json", "Machine")
   $env:ARGUS_AGENT_CONFIG = "$Dir\\agent.json"
   & "$Dir\\venv\\Scripts\\argus-agent.exe" join $Join --kind windows --collector windows --interval 60
-  # The OS scheduler drives the cadence and restarts the agent — robust against
-  # crashes, sleep/hibernate and reboots (a single long-lived loop was not).
+  # Heartbeat model: the scheduler just fires often; the agent decides whether
+  # its own interval has elapsed (`run --once` is a no-op when not yet due).
+  # So the cadence lives in the (centrally settable) agent config, and the task
+  # is self-healing against crashes, sleep/hibernate and reboots.
   $action = New-ScheduledTaskAction -Execute "$Dir\\venv\\Scripts\\argus-agent.exe" -Argument "run --once"
   $atStartup = New-ScheduledTaskTrigger -AtStartup
-  $hourly = New-ScheduledTaskTrigger -Once -At (Get-Date) `
-      -RepetitionInterval (New-TimeSpan -Hours 1) -RepetitionDuration (New-TimeSpan -Days 3650)
+  $beat = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+      -RepetitionInterval (New-TimeSpan -Minutes 15) -RepetitionDuration (New-TimeSpan -Days 3650)
   $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries `
       -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew `
       -ExecutionTimeLimit (New-TimeSpan -Minutes 30) `
       -RestartInterval (New-TimeSpan -Minutes 5) -RestartCount 3
   $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-  Register-ScheduledTask -TaskName "ArgusAgent" -Action $action -Trigger $atStartup,$hourly `
+  Register-ScheduledTask -TaskName "ArgusAgent" -Action $action -Trigger $atStartup,$beat `
       -Settings $settings -Principal $principal -Force | Out-Null
   Start-ScheduledTask -TaskName "ArgusAgent"
-  Write-Host "Scheduled task 'ArgusAgent' installed (hourly, self-healing) and started."
+  Write-Host "Scheduled task 'ArgusAgent' installed (15-min heartbeat, self-gated, self-healing) and started."
 }}
 """
 

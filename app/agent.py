@@ -265,6 +265,22 @@ def _apply_commands(commands: list[dict], cfg: dict) -> bool:
     return rescan
 
 
+def _push_due(cfg: dict) -> bool:
+    """Is a push due according to the agent's own interval?
+
+    In --once mode the OS scheduler is just a heartbeat that fires often; the
+    agent itself decides whether its configured interval has elapsed since the
+    last successful push. This keeps the cadence in the (centrally settable)
+    agent config instead of the task definition, and tolerates a heartbeat that
+    fires slightly early.
+    """
+    interval = int(cfg.get("interval") or 0)
+    if interval <= 0:
+        return True  # no interval configured -> always push on invocation
+    last = float(cfg.get("last_push_ts") or 0)
+    return (time.time() - last) >= (interval * 60 - 30)  # 30s slack
+
+
 def cmd_run(args) -> int:
     load_builtin_collectors()
     try:
@@ -274,6 +290,12 @@ def cmd_run(args) -> int:
         return 2
 
     once = bool(getattr(args, "once", False))
+    if once and not _push_due(cfg):
+        age = int(time.time() - float(cfg.get("last_push_ts") or 0))
+        log.info("noch nicht fällig (Intervall %s min, letzter Push vor %ss) — nichts zu tun",
+                 cfg.get("interval"), age)
+        return 0
+
     ram_creds: dict = {}  # server-delivered credentials, kept in memory only
     rc = 0
     while True:
@@ -287,16 +309,19 @@ def cmd_run(args) -> int:
             if data.get("server_version") and data["server_version"] != __version__:
                 log.warning("Agent-Update verfügbar: %s -> %s", __version__, data["server_version"])
             rescan = _apply_commands(cmds, cfg)
+            # Remember when we last pushed so --once can gate on the interval.
+            cfg["last_push_ts"] = time.time()
+            _save_config(cfg)
         except Exception:
             log.exception("Push fehlgeschlagen")
             rc = 1
-        # --once: one push cycle per invocation (the OS scheduler drives the
-        # cadence and restarts us — robust against crashes/sleep/reboot).
-        # A pending rescan is still honoured immediately before we exit.
-        if once and not rescan:
-            return rc
+        # A pending rescan is honoured immediately, even in --once mode.
         if rescan:
             continue
+        # --once: one due push per invocation; the OS scheduler drives cadence
+        # and restarts us (robust against crash/sleep/reboot).
+        if once:
+            return rc
         if not cfg.get("interval"):
             break
         time.sleep(int(cfg["interval"]) * 60)
