@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Argus{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="/" class="brand">🛡️ Argus</a>
+    <nav>
+      <a href="/">Übersicht</a>
+      <a href="/agents">Agenten</a>
+      <a href="/systems/new">+ System</a>
+      <form method="post" action="/scan-all" class="inline">
+        <button type="submit" class="btn small">Alle scannen</button>
+      </form>
+      {% if auth_enabled %}<a href="/logout" class="muted small">Logout</a>{% endif %}
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <footer>read-only Monitoring · v{{ version or "" }}</footer>
+  <script>
+    document.addEventListener("click", function (e) {
+      const btn = e.target.closest(".copy");
+      if (!btn) return;
+      const cmd = btn.getAttribute("data-cmd") || "";
+      navigator.clipboard.writeText(cmd).then(() => {
+        const old = btn.textContent;
+        btn.textContent = "kopiert ✓";
+        btn.classList.add("done");
+        setTimeout(() => { btn.textContent = old; btn.classList.remove("done"); }, 1500);
+      });
+    });
+  </script>
+</body>
+</html>

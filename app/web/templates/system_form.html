@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ "System bearbeiten" if edit else "Neues System" }} · Argus{% endblock %}
+{% block content %}
+<a href="{{ ('/systems/' ~ system.id) if edit else '/' }}" class="muted">← zurück</a>
+<h1>{{ "System bearbeiten" if edit else "System hinzufügen" }}</h1>
+<form method="post" action="{{ ('/systems/' ~ system.id ~ '/edit') if edit else '/systems' }}" class="form">
+  <label>Name <input name="name" required placeholder="z.B. NAS Keller" value="{{ system.name if edit else '' }}"></label>
+  <label>Typ
+    <select name="kind">
+      {% for k in kinds %}<option value="{{ k }}" {{ 'selected' if edit and system.kind.value == k else '' }}>{{ k }}</option>{% endfor %}
+    </select>
+  </label>
+  <div class="row2">
+    <label>Gruppe / Standort <input name="group" placeholder="z.B. Kunde-A, Büro, Zuhause" value="{{ system.group or '' if edit else '' }}"></label>
+    <label>Tags (Komma-getrennt) <input name="tags" placeholder="prod, nas, kritisch" value="{{ system.tags|join(', ') if edit and system.tags else '' }}"></label>
+  </div>
+  <label>Host / IP <input name="hostname" placeholder="192.168.1.10" value="{{ system.hostname or '' if edit else '' }}"></label>
+  <label>Web-UI URL <input name="web_url" placeholder="https://nas.local:5001" value="{{ system.web_url or '' if edit else '' }}"></label>
+  <label>Collector
+    <select name="collector">
+      {% for c in collectors %}<option value="{{ c }}" {{ 'selected' if edit and system.collector == c else '' }}>{{ c }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Zugang / Notizen (wie erreiche ich das System?)
+    <textarea name="access_notes" rows="3" placeholder="SSH :22 user admin, VPN nötig, ...">{{ system.access_notes or '' if edit else '' }}</textarea>
+  </label>
+  <label>Collector-Konfig (JSON)
+    <textarea name="collector_config" rows="4" placeholder='{"host": "192.168.1.10", "username": "admin"}'>{{ system.collector_config|tojson if edit and system.collector_config else '' }}</textarea>
+  </label>
+  <div class="hint muted small">
+    <strong>docker:</strong> <code>{"base_url": "ssh://user@host", "targets": "running"}</code><br>
+    <strong>ssh_linux:</strong> <code>{"host": "...", "username": "...", "key_filename": "...", "via": {"host": "edge", "username": "..."}}</code><br>
+    <strong>network_discovery:</strong> <code>{"targets": ["192.168.1.0/24","10.0.0.0/24"], "grab_banner": true}</code><br>
+    <strong>relay</strong> (über Edge-Agent im Kundennetz):
+    <code>{"agent_url": "https://edge:8080", "token": "…", "collector": "network_discovery", "config": {"targets": "10.10.0.0/24"}, "label": "Kunde-A LAN"}</code>
+  </div>
+  {% if edit %}
+  <label class="chk"><input type="checkbox" name="enabled" {{ 'checked' if system.enabled else '' }}> aktiv (wird bei „Alle scannen" einbezogen)</label>
+  {% endif %}
+  <button class="btn" type="submit">Speichern</button>
+</form>
+{% if edit %}
+<form method="post" action="/systems/{{ system.id }}/delete" class="form" style="margin-top:1rem"
+      onsubmit="return confirm('System „{{ system.name }}“ und alle seine Scans wirklich löschen?');">
+  <button class="btn small" type="submit" style="background:var(--high)">System löschen</button>
+</form>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,342 @@
+{% extends "base.html" %}
+{% block title %}{{ system.name }} · Argus{% endblock %}
+{% block content %}
+<a href="/" class="muted">← Übersicht</a>
+<div class="head-row">
+  <h1>{{ system.name }} <span class="chip">{{ system.kind.value }}</span>
+    {% for t in system.tags %}<span class="tag">{{ t }}</span>{% endfor %}
+    {% if system.group %}<span class="muted small">· {{ system.group }}</span>{% endif %}
+  </h1>
+  <div class="inline">
+    <a href="/systems/{{ system.id }}/edit" class="btn small" title="Name, Gruppe, Tags, Config">Bearbeiten</a>
+    {% if system.discovered %}
+    <span class="muted small">Wird über <strong>{{ system.discovered_via }}</strong> aktualisiert</span>
+    {% else %}
+    <form method="post" action="/systems/{{ system.id }}/scan" class="inline">
+      <button class="btn" type="submit" title="Server scannt selbst (Pull/Relay)">Jetzt scannen</button>
+    </form>
+    <form method="post" action="/systems/{{ system.id }}/command" class="inline">
+      <input type="hidden" name="cmd_type" value="rescan">
+      <button class="btn small" type="submit" title="Befehl für Push-Client hinterlegen – wird beim nächsten Poll ausgeführt">Neu-Scan anfordern (Push)</button>
+    </form>
+    <form method="post" action="/systems/{{ system.id }}/command" class="inline" title="Poll-Intervall des Push-Clients setzen (z.B. beim Debuggen hochdrehen)">
+      <input type="hidden" name="cmd_type" value="set_interval">
+      <select name="minutes" class="mini">
+        <option value="1">1 Min</option>
+        <option value="5">5 Min</option>
+        <option value="15">15 Min</option>
+        <option value="60" selected>60 Min</option>
+        <option value="360">6 Std</option>
+      </select>
+      <button class="btn small" type="submit">Intervall setzen</button>
+    </form>
+    {% if system.collector == "network_discovery" %}
+    <form method="post" action="/systems/{{ system.id }}/command" class="inline" title="Portliste für den Scan vom Server vorgeben">
+      <input type="hidden" name="cmd_type" value="set_config">
+      <select name="ports" class="mini">
+        <option value="common">Ports: common (~42)</option>
+        <option value="web">web</option>
+        <option value="windows">windows</option>
+        <option value="top100">top100</option>
+        <option value="full">full (1-65535, langsam)</option>
+      </select>
+      <button class="btn small" type="submit">Portliste setzen</button>
+    </form>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% if pending_commands %}
+<div class="pending muted small">⏳ Anstehende Befehle für den Push-Client (werden beim nächsten Poll ausgeliefert):
+  {% for c in pending_commands %}<span class="tag">{{ c.type }}{% if c.payload.get('minutes') %}={{ c.payload.get('minutes') }}min{% endif %}</span> {% endfor %}
+</div>
+{% endif %}
+
+<section class="cards">
+  <div class="card">
+    <h3>Zugang / Dokumentation</h3>
+    <dl>
+      {% if system.discovered %}<dt>Entdeckt über</dt><dd><strong>{{ system.discovered_via or "—" }}</strong></dd>{% endif %}
+      <dt>IP</dt><dd>{{ system.ip_address or "—" }}</dd>
+      {% if system.mac %}<dt>MAC</dt><dd>{{ system.mac }}</dd>{% endif %}
+      <dt>Host</dt><dd>{{ system.hostname or "—" }}</dd>
+      <dt>Web-UI</dt><dd>{% if system.web_url %}<a href="{{ system.web_url }}" target="_blank" rel="noopener">{{ system.web_url }}</a>{% else %}—{% endif %}</dd>
+      <dt>Collector</dt><dd>{{ system.collector }}</dd>
+    </dl>
+    {% if system.access_notes %}<pre class="notes">{{ system.access_notes }}</pre>{% endif %}
+  </div>
+  <div class="card">
+    <h3>Letzter Scan</h3>
+    {% if last %}
+      <p class="muted">{{ last.started_at.strftime("%Y-%m-%d %H:%M") }} · {{ last.status.value }}</p>
+      <ul class="summary">
+        {% for k, v in last.summary.items() %}<li><span class="muted">{{ k }}</span> {{ v }}</li>{% endfor %}
+      </ul>
+    {% else %}<p class="muted">Noch kein erfolgreicher Scan.</p>{% endif %}
+  </div>
+  <div class="card">
+    <h3>Schwachstellen</h3>
+    <div class="sevrow">
+      <span class="badge critical">{{ severity.get("critical", 0) }} krit.</span>
+      <span class="badge high">{{ severity.get("high", 0) }} hoch</span>
+      <span class="badge med">{{ severity.get("medium", 0) }} mittel</span>
+      <span class="badge low">{{ severity.get("low", 0) }} niedrig</span>
+    </div>
+  </div>
+</section>
+
+{% set netitems = packages|selectattr('type','in',['open-port','iot-device'])|list %}
+{% if netitems %}
+<h2>Im Netzwerk gefunden <span class="muted">({{ netitems|map(attribute='source')|unique|list|length }} Geräte)</span></h2>
+<p class="muted small">Entdeckt vom Agent dieses Systems ({{ system.ip_address or system.hostname or system.name }}).</p>
+<table class="grid compact">
+  <thead><tr><th>Gerät (IP)</th><th>Hostname / MAC</th><th>Erkanntes Gerät</th><th>Offene Dienste</th></tr></thead>
+  <tbody>
+  {% for host, items in netitems|groupby('source') %}
+    {% set dev = (items|selectattr('type','equalto','iot-device')|list|first) %}
+    {% set svcs = items|selectattr('type','equalto','open-port')|list %}
+    {% set ex = (items|first).extra or {} %}
+    <tr>
+      <td><strong>{{ host }}</strong></td>
+      <td class="muted small">{{ ex.get("hostname") or "" }}{% if ex.get("mac") %}<br>{{ ex.get("mac") }}{% endif %}</td>
+      <td>{% if dev %}<span class="tag">{{ dev.name }}</span>{% if dev.version %} <strong>{{ dev.version }}</strong>{% endif %}{% else %}—{% endif %}</td>
+      <td>
+        {% for s in svcs %}{% if s.extra and s.extra.get('port') %}<span class="tag" title="{{ s.extra.get('banner','') }}{{ s.extra.get('product','') }}">{{ s.name }}:{{ s.extra.get('port') }}</span> {% endif %}{% endfor %}
+        {% if not svcs or (svcs|length == 1 and not svcs[0].extra.get('port')) %}<span class="muted small">kein gescannter Port offen (nur ARP)</span>{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if vulns %}
+<h2>Bekannte Schwachstellen</h2>
+<table class="grid">
+  <thead><tr><th>CVE</th><th>Schwere</th><th>Paket</th><th>Installiert</th><th>Fix in</th><th>Quelle</th></tr></thead>
+  <tbody>
+  {% for v in vulns %}
+    <tr>
+      <td><a href="https://nvd.nist.gov/vuln/detail/{{ v.cve_id }}" target="_blank" rel="noopener">{{ v.cve_id }}</a></td>
+      <td><span class="badge {{ v.severity.value }}">{{ v.severity.value }}</span></td>
+      <td>{{ v.package_name or "—" }}</td>
+      <td>{{ v.installed_version or "—" }}</td>
+      <td>{% if v.fixed_version %}<strong>{{ v.fixed_version }}</strong>{% else %}—{% endif %}</td>
+      <td class="muted small">{{ v.source or "" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Komponenten / SBOM {% if packages %}<span class="muted">({{ packages|length }})</span>{% endif %}</h2>
+{% if system.collector == "windows" %}
+<div class="cmd" style="margin-bottom:.6rem">
+  <span class="muted small">Alle App-Updates (winget) auf einmal:</span>
+  <code>winget upgrade --all -e</code>
+  <button class="copy" type="button" data-cmd="winget upgrade --all -e">kopieren</button>
+</div>
+{% endif %}
+{% if packages %}
+<div class="toolbar" id="comp-toolbar">
+  <input type="search" id="f-search" placeholder="Suchen (Name)…" autocomplete="off">
+  <select id="f-type">
+    <option value="">Alle Typen</option>
+    {% for t in packages|map(attribute='type')|unique|sort %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+  </select>
+  <select id="f-status">
+    <option value="">Alle Status</option>
+    <option value="update">nur Updates</option>
+    <option value="current">nur aktuell</option>
+    <option value="unchecked">nur ungeprüft</option>
+    <option value="service">nur Dienste</option>
+  </select>
+  <label class="chk"><input type="checkbox" id="f-hide-services"> Dienste ausblenden</label>
+  <span class="muted small" id="f-count"></span>
+</div>
+<table class="grid" id="components">
+  <thead><tr>
+    <th data-sort="name" class="sortable">Name</th>
+    <th data-sort="version" class="sortable">Version</th>
+    <th data-sort="status" class="sortable">Status / Update</th>
+    <th data-sort="type" class="sortable">Typ</th>
+    <th>Quelle</th>
+  </tr></thead>
+  <tbody>
+  {% for p in packages %}
+    {% set has_update = p.latest_version and p.latest_version != p.version %}
+    {% set rstatus = 'service' if p.type == 'service' else ('update' if (has_update or p.type == 'windows-update') else ('current' if (p.latest_version and p.latest_version == p.version) else 'unchecked')) %}
+    <tr data-type="{{ p.type or '' }}" data-name="{{ p.name|lower }}" data-status="{{ rstatus }}">
+      <td>{{ p.name }}{% if p.extra and p.extra.get("layers") %} <span class="muted small">· {{ p.extra.get("layers") }} Layer</span>{% endif %}
+        {% if p.extra and p.extra.get("publisher") %}<span class="muted small">· {{ p.extra.get("publisher") }}</span>{% endif %}
+        {% if p.type == "service" and p.extra %}<span class="muted small">· {{ p.extra.get("account") }}</span>{% endif %}</td>
+      <td>
+        {% if p.type == "service" %}
+          <span class="badge {{ 'ok' if p.version == 'Running' else 'unknown' }}">{{ p.version }}</span>
+        {% else %}{{ p.version or "—" }}{% endif %}
+      </td>
+      <td>
+        {% if p.type == "service" %}
+          <span class="muted small">Start: {{ p.extra.get("start_mode") }}</span>
+        {% elif p.type == "windows-update" %}
+          <span class="badge {{ 'high' if p.extra.get('category') == 'Software' else 'med' }}">{{ p.extra.get("category") }}{% if p.extra.get("kb") %} · {{ p.extra.get("kb") }}{% endif %}</span>
+          {% if p.extra and p.extra.get("update_cmd") %}
+            <div class="cmd"><code>{{ p.extra.get("update_cmd") }}</code><button class="copy" type="button" data-cmd="{{ p.extra.get('update_cmd') }}">kopieren</button></div>
+          {% endif %}
+        {% elif p.latest_version and p.latest_version != p.version %}
+          {% if p.name in snoozes %}
+            <span class="badge unknown" title="Update ausgesetzt">⏸ Snooze bis {{ snoozes[p.name].until.strftime("%Y-%m-%d") }}</span>
+            <form method="post" action="/systems/{{ system.id }}/unsnooze" class="inline">
+              <input type="hidden" name="component" value="{{ p.name }}">
+              <button class="copy" type="submit">aufheben</button>
+            </form>
+          {% else %}
+            {% if p.extra and p.extra.get("update_type") == "major" %}
+              <span class="badge med" title="Neue Hauptversion (meist Feature-/Paid-Upgrade, kein Patch)">Major: {{ p.latest_version }}</span>
+            {% else %}
+              <span class="badge high" title="Patch/Minor-Update">Update: {{ p.latest_version }}</span>
+            {% endif %}
+            {% if p.extra and p.extra.get("update_source") %}<span class="muted small">· {{ p.extra.get("update_source") }}: {{ p.extra.get(p.extra.get("update_source") ~ "_id") }}</span>{% endif %}
+            <form method="post" action="/systems/{{ system.id }}/snooze" class="inline" title="Update aussetzen">
+              <input type="hidden" name="component" value="{{ p.name }}">
+              <select name="days" class="mini"><option value="7">7T</option><option value="30" selected>30T</option><option value="90">90T</option></select>
+              <button class="copy" type="submit">Snooze</button>
+            </form>
+            {% if p.extra and p.extra.get("update_cmd") %}
+              <div class="cmd"><code>{{ p.extra.get("update_cmd") }}</code><button class="copy" type="button" data-cmd="{{ p.extra.get('update_cmd') }}">kopieren</button></div>
+            {% endif %}
+          {% endif %}
+        {% elif p.latest_version and p.latest_version == p.version %}
+          <span class="badge ok">aktuell</span>
+        {% else %}
+          <span class="muted small">nicht geprüft</span>
+        {% endif %}
+      </td>
+      <td><span class="chip small">{{ p.type or "?" }}</span></td>
+      <td class="muted small">{% if p.type == "service" and p.extra %}{{ p.extra.get("path", "")[:60] }}{% else %}{{ p.source or "" }}{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">Keine Komponenten erfasst.</p>
+{% endif %}
+
+{% if changes %}
+<h2>Änderungen / Update-Verlauf <span class="muted">({{ changes|length }})</span></h2>
+<table class="grid compact">
+  <thead><tr><th>Zeitpunkt</th><th>Komponente</th><th>Änderung</th><th>Vorher → Nachher</th></tr></thead>
+  <tbody>
+  {% for c in changes %}
+    <tr>
+      <td class="muted small">{{ c.detected_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td>{{ c.name }} {% if c.type %}<span class="chip small">{{ c.type }}</span>{% endif %}</td>
+      <td>
+        {% if c.change_type == "update_applied" %}<span class="badge ok">Update durchgeführt</span>
+        {% elif c.change_type == "version_changed" %}<span class="badge med">Version geändert</span>
+        {% elif c.change_type == "added" %}<span class="badge" style="background:var(--accent)">neu</span>
+        {% elif c.change_type == "removed" %}<span class="badge err">entfernt</span>
+        {% elif c.change_type == "status_changed" %}<span class="badge unknown">Dienst-Status</span>
+        {% else %}<span class="badge unknown">{{ c.change_type }}</span>{% endif %}
+      </td>
+      <td class="muted small">{{ c.old_value or "—" }} → {{ c.new_value or "—" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if history %}
+<h2>Scan-Historie</h2>
+<table class="grid compact">
+  <thead><tr><th>Zeit</th><th>Status</th><th>Zusammenfassung</th></tr></thead>
+  <tbody>
+  {% for h in history %}
+    <tr>
+      <td class="muted">{{ h.started_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td><span class="badge {{ 'ok' if h.status.value == 'ok' else 'err' }}">{{ h.status.value }}</span></td>
+      <td class="muted small">{{ h.error or h.summary }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<script>
+(function () {
+  const table = document.getElementById("components");
+  if (!table) return;
+  const key = "argus-filter-{{ system.id }}";
+  const tbody = table.querySelector("tbody");
+  const rows = Array.from(tbody.querySelectorAll("tr"));
+  const search = document.getElementById("f-search");
+  const fType = document.getElementById("f-type");
+  const fStatus = document.getElementById("f-status");
+  const fHide = document.getElementById("f-hide-services");
+  const count = document.getElementById("f-count");
+  let sortKey = null, sortDir = 1;
+
+  // restore saved filter state
+  try {
+    const s = JSON.parse(localStorage.getItem(key) || "{}");
+    if (s.q) search.value = s.q;
+    if (s.type) fType.value = s.type;
+    if (s.status) fStatus.value = s.status;
+    if (s.hide) fHide.checked = true;
+    if (s.sortKey) { sortKey = s.sortKey; sortDir = s.sortDir || 1; }
+  } catch (e) {}
+
+  function save() {
+    try {
+      localStorage.setItem(key, JSON.stringify({
+        q: search.value, type: fType.value, status: fStatus.value,
+        hide: fHide.checked, sortKey, sortDir,
+      }));
+    } catch (e) {}
+  }
+
+  function cellText(row, k) {
+    if (k === "name") return row.dataset.name || "";
+    if (k === "status") return row.dataset.status || "";
+    if (k === "type") return row.dataset.type || "";
+    if (k === "version") return (row.children[1].textContent || "").trim().toLowerCase();
+    return "";
+  }
+
+  function apply() {
+    const q = search.value.trim().toLowerCase();
+    const t = fType.value, st = fStatus.value, hide = fHide.checked;
+    let shown = 0;
+    rows.forEach(r => {
+      let ok = true;
+      if (q && !(r.dataset.name || "").includes(q)) ok = false;
+      if (t && r.dataset.type !== t) ok = false;
+      if (st && r.dataset.status !== st) ok = false;
+      if (hide && r.dataset.type === "service") ok = false;
+      r.style.display = ok ? "" : "none";
+      if (ok) shown++;
+    });
+    count.textContent = shown + " / " + rows.length;
+    if (sortKey) {
+      const sorted = rows.slice().sort((a, b) =>
+        cellText(a, sortKey).localeCompare(cellText(b, sortKey), undefined, { numeric: true }) * sortDir);
+      sorted.forEach(r => tbody.appendChild(r));
+    }
+    save();
+  }
+
+  [search, fType, fStatus, fHide].forEach(el => el.addEventListener("input", apply));
+  table.querySelectorAll("th.sortable").forEach(th => {
+    th.addEventListener("click", () => {
+      const k = th.dataset.sort;
+      sortDir = (sortKey === k) ? -sortDir : 1;
+      sortKey = k;
+      table.querySelectorAll("th.sortable").forEach(h => h.classList.remove("asc", "desc"));
+      th.classList.add(sortDir === 1 ? "asc" : "desc");
+      apply();
+    });
+  });
+  apply();
+})();
+</script>
+{% endblock %}

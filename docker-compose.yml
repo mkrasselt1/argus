@@ -1,0 +1,34 @@
+services:
+  argus:
+    build:
+      context: .
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+    image: argus:${APP_VERSION:-dev}
+    container_name: argus
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SECSCAN_SCAN_INTERVAL_MINUTES: "360"
+      SECSCAN_SCAN_RETENTION: "20"
+      # Production secrets — set these in a .env file next to this compose file.
+      SECSCAN_ADMIN_PASSWORD: "${SECSCAN_ADMIN_PASSWORD:?set a UI login password}"
+      SECSCAN_SECRET_KEY: "${SECSCAN_SECRET_KEY:?set a random session secret}"
+      SECSCAN_CRYPTO_KEY: "${SECSCAN_CRYPTO_KEY:-}"
+      SECSCAN_INGEST_TOKEN: "${SECSCAN_INGEST_TOKEN:?set an ingest token}"
+    volumes:
+      # Persistent, revision-safe database (survives redeploys).
+      - secscan-data:/data
+      # Read-only access to the host's Docker daemon so the tool can
+      # decompose the containers running here into their components.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # Hardening: the tool never needs to write to its own filesystem.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  secscan-data:

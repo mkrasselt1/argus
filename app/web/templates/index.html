@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Übersicht · Argus{% endblock %}
+{% block content %}
+<div class="head-row">
+  <h1>Systeme</h1>
+  <div class="inline">
+    <a href="/" class="btn small {{ '' if updates_only else 'active' }}">Alle</a>
+    <a href="/?updates=1" class="btn small {{ 'active' if updates_only else '' }}">Nur mit Updates</a>
+  </div>
+</div>
+{% if not rows %}
+  <p class="muted">Noch keine Systeme angelegt. <a href="/systems/new">Erstes System hinzufügen</a>.</p>
+{% else %}
+{% for group, grows in grouped %}
+<h2 class="grp">{{ group }} <span class="muted small">({{ grows|length }})</span></h2>
+<table class="grid">
+  <thead>
+    <tr><th>System</th><th>Typ</th><th>IP / Host</th><th>Tags</th><th>Collector</th>
+        <th>Letzter Scan</th><th>Komp.</th><th>Updates</th><th>Risiko</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for r in grows %}
+    <tr>
+      <td><a href="/systems/{{ r.system.id }}"><strong>{{ r.system.name }}</strong></a></td>
+      <td><span class="chip">{{ r.system.kind.value }}</span></td>
+      <td class="muted small">
+        {% if r.system.ip_address %}<strong>{{ r.system.ip_address }}</strong>{% endif %}
+        {% if r.system.hostname and r.system.hostname != r.system.ip_address %}
+          {% if r.system.ip_address %}<br>{% endif %}
+          {% if r.system.web_url %}<a href="{{ r.system.web_url }}" target="_blank" rel="noopener">{{ r.system.hostname }}</a>{% else %}{{ r.system.hostname }}{% endif %}
+        {% elif not r.system.ip_address %}
+          {% if r.system.web_url %}<a href="{{ r.system.web_url }}" target="_blank" rel="noopener">{{ r.system.web_url }}</a>{% else %}—{% endif %}
+        {% endif %}
+      </td>
+      <td>{% for t in r.system.tags %}<span class="tag">{{ t }}</span>{% endfor %}</td>
+      <td class="muted small">{{ r.system.collector }}</td>
+      <td class="muted small">
+        {% if r.last_scan_at %}{{ r.last_scan_at.strftime("%Y-%m-%d %H:%M") }}
+          {% if r.status and r.status != "ok" %}<span class="badge err">{{ r.status }}</span>{% endif %}
+        {% else %}<span class="muted">nie</span>{% endif %}
+      </td>
+      <td>{{ r.packages }}</td>
+      <td>{% if r.updates %}<span class="badge high">{{ r.updates }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td>
+        {% if r.critical %}<span class="badge critical">{{ r.critical }}</span>{% endif %}
+        {% if r.high %}<span class="badge high">{{ r.high }}</span>{% endif %}
+        {% if not r.critical and not r.high %}<span class="badge ok">ok</span>{% endif %}
+      </td>
+      <td><a href="/systems/{{ r.system.id }}/edit" class="muted small" title="Bearbeiten">✎</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endfor %}
+{% endif %}
+{% endblock %}
