@@ -157,7 +157,7 @@ def login_form(request: Request, next: str = "/", error: str = ""):
     if not settings.auth_enabled():
         return RedirectResponse("/", status_code=303)
     return templates.TemplateResponse(
-        "login.html", {"request": request, "next": next, "error": error, "version": __version__}
+        request, "login.html", {"request": request, "next": next, "error": error, "version": __version__}
     )
 
 
@@ -484,7 +484,7 @@ def agents_page(request: Request, session: Session = Depends(get_session)):
     join = request.session.pop("join_flash", "")
     clients = session.exec(select(Client).order_by(Client.enrolled_at.desc())).all()
     return templates.TemplateResponse(
-        "agents.html",
+        request, "agents.html",
         {"request": request, "clients": clients, "join": join,
          "base_url": _server_base(request) + "/",
          "credentials": _creds.list_credentials(),
@@ -626,7 +626,7 @@ def dashboard(request: Request, updates: bool = False, session: Session = Depend
         groups.setdefault(r["system"].group or "Ohne Gruppe", []).append(r)
     grouped = sorted(groups.items(), key=lambda kv: (kv[0] == "Ohne Gruppe", kv[0].lower()))
     return templates.TemplateResponse(
-        "index.html",
+        request, "index.html",
         {"request": request, "rows": rows, "grouped": grouped,
          "updates_only": updates, "version": __version__},
     )
@@ -639,7 +639,7 @@ def dashboard(request: Request, updates: bool = False, session: Session = Depend
 @app.get("/systems/new", response_class=HTMLResponse)
 def new_system_form(request: Request):
     return templates.TemplateResponse(
-        "system_form.html",
+        request, "system_form.html",
         {
             "request": request,
             "kinds": [k.value for k in SystemKind],
@@ -682,7 +682,7 @@ def system_detail(system_id: int, request: Request, session: Session = Depends(g
         )
     ).all()
     return templates.TemplateResponse(
-        "system.html",
+        request, "system.html",
         {
             "request": request,
             "system": system,
@@ -762,7 +762,7 @@ def edit_system_form(system_id: int, request: Request, session: Session = Depend
     if system is None:
         return HTMLResponse("System not found", status_code=404)
     return templates.TemplateResponse(
-        "system_form.html",
+        request, "system_form.html",
         {
             "request": request,
             "system": system,
