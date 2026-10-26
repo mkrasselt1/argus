@@ -4,6 +4,11 @@ import tempfile
 
 os.environ.setdefault("SECSCAN_DATABASE_URL", f"sqlite:///{tempfile.mktemp(suffix='.db')}")
 os.environ.setdefault("SECSCAN_SCAN_INTERVAL_MINUTES", "0")
+# TestClient speaks plain HTTP; don't mark the session cookie Secure or it won't
+# round-trip (production keeps secure_cookies=True).
+os.environ.setdefault("SECSCAN_SECURE_COOKIES", "0")
+
+import re  # noqa: E402
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -18,6 +23,14 @@ from app.collectors.ssh_linux import _parse_packages  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Severity  # noqa: E402
+
+
+def _csrf(client, path: str = "/systems/new") -> str:
+    """Fetch a page so the CSRF cookie is set, and return its CSRF token."""
+    r = client.get(path, headers={"accept": "text/html"})
+    m = re.search(r'name="csrf_token" value="([^"]+)"', r.text)
+    assert m, f"no CSRF token found on {path}"
+    return m.group(1)
 
 
 def test_collectors_register():
@@ -457,7 +470,8 @@ def test_ingest_push_and_command_channel(monkeypatch):
         sysid = next(s["id"] for s in systems if s["name"] == "PushBox")
 
         # queue a control command; it is handed back on the next push, once
-        client.post(f"/systems/{sysid}/command", data={"cmd_type": "rescan"},
+        client.post(f"/systems/{sysid}/command",
+                    data={"cmd_type": "rescan", "csrf_token": _csrf(client)},
                     follow_redirects=False)
         r2 = client.post("/ingest", json=payload, headers={"X-Ingest-Token": "pushsecret"})
         cmds = r2.json()["commands"]
@@ -504,7 +518,8 @@ def test_create_and_list_system():
     with TestClient(app) as client:
         r = client.post(
             "/systems",
-            data={"name": "Test NAS", "kind": "synology", "collector": "manual"},
+            data={"name": "Test NAS", "kind": "synology", "collector": "manual",
+                  "csrf_token": _csrf(client)},
             follow_redirects=False,
         )
         assert r.status_code == 303

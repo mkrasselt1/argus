@@ -54,6 +54,24 @@ sind kryptografisch getrennt; eine gestohlene Agent-Platte ist nutzlos.
 **Migration:** das aktuelle symmetrische v1 (Server kennt Klartext) wird durch
 dieses Modell ersetzt; bestehende Credentials einmalig neu erfassen.
 
+**Caveats / Grenzen des Bedrohungsmodells (ehrlich benannt):**
+- Die Zusage „der Server sieht den Klartext nie" gilt gegen einen
+  **honest-but-curious** Server und **Platten-Diebstahl** — **nicht** gegen einen
+  **bösartigen Server**, der die an den Agenten gelieferten Kommandos/Module
+  kontrolliert: er könnte einen Agenten dazu bringen, ein Secret zu öffnen und
+  das Ergebnis zweckzuentfremden. Fingerprint-Pinning sichert nur die
+  Server-*Identität*, nicht dessen Gutartigkeit. Server-Integrität (Zugriff,
+  Image, Reverse-Proxy) bleibt also sicherheitsrelevant.
+- `Client.key_passphrase` wird **per Design im Klartext** in der Server-DB
+  gehalten (Split-Knowledge: Passphrase am Server, verschlüsselter Private Key am
+  Agenten). Wer die Server-DB **und** die Agent-Platte erbeutet, kann Credentials
+  öffnen; einer allein genügt nicht.
+- Secret-Felder der `collector_config` werden at-rest mit dem Fernet-Schlüssel
+  (`SECSCAN_CRYPTO_KEY`, sonst abgeleitet) verschlüsselt. Das schützt gegen
+  DB-/Platten-Diebstahl, nicht gegen einen Angreifer mit laufendem Server-Prozess
+  (der den Schlüssel besitzt). Für `ssh_linux` etc. sind Key-Dateien gegenüber
+  Passwörtern zu bevorzugen.
+
 ## 3. Skalierung auf hunderte Geräte
 
 **Aktuelle Engpässe (zu beheben vor Produktiv):**

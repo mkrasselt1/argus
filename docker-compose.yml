@@ -20,9 +20,16 @@ services:
     volumes:
       # Persistent, revision-safe database (survives redeploys).
       - secscan-data:/data
-      # Read-only access to the host's Docker daemon so the tool can
-      # decompose the containers running here into their components.
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # !!! DANGER — DO NOT MOUNT THE RAW DOCKER SOCKET HERE !!!
+      # Mounting /var/run/docker.sock gives this container effective ROOT on the
+      # host (even ":ro" — the socket API lets a caller start a privileged
+      # container and escape). The dashboard does NOT need it: run the `docker`
+      # collector on a dedicated EDGE AGENT next to the Docker host, or expose
+      # the daemon through a read-only docker-socket-proxy (Tecnativa) that only
+      # permits the /images and /containers GET endpoints, and point the
+      # collector's base_url at that proxy. Only uncomment if you fully accept
+      # the host-takeover risk:
+      # - /var/run/docker.sock:/var/run/docker.sock:ro
     # Hardening: the tool never needs to write to its own filesystem.
     read_only: true
     tmpfs:

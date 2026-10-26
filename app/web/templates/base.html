@@ -14,9 +14,13 @@
       <a href="/agents">Agenten</a>
       <a href="/systems/new">+ System</a>
       <form method="post" action="/scan-all" class="inline">
+        {% include "_csrf.html" %}
         <button type="submit" class="btn small">Alle scannen</button>
       </form>
-      {% if auth_enabled %}<a href="/logout" class="muted small">Logout</a>{% endif %}
+      {% if auth_enabled %}<form method="post" action="/logout" class="inline">
+        {% include "_csrf.html" %}
+        <button type="submit" class="btn small muted">Logout</button>
+      </form>{% endif %}
     </nav>
   </header>
   <main>

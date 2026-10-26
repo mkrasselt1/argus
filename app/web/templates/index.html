@@ -27,9 +27,9 @@
         {% if r.system.ip_address %}<strong>{{ r.system.ip_address }}</strong>{% endif %}
         {% if r.system.hostname and r.system.hostname != r.system.ip_address %}
           {% if r.system.ip_address %}<br>{% endif %}
-          {% if r.system.web_url %}<a href="{{ r.system.web_url }}" target="_blank" rel="noopener">{{ r.system.hostname }}</a>{% else %}{{ r.system.hostname }}{% endif %}
+          {% if r.system.web_url and (r.system.web_url.startswith('http://') or r.system.web_url.startswith('https://')) %}<a href="{{ r.system.web_url }}" target="_blank" rel="noopener">{{ r.system.hostname }}</a>{% else %}{{ r.system.hostname }}{% endif %}
         {% elif not r.system.ip_address %}
-          {% if r.system.web_url %}<a href="{{ r.system.web_url }}" target="_blank" rel="noopener">{{ r.system.web_url }}</a>{% else %}—{% endif %}
+          {% if r.system.web_url and (r.system.web_url.startswith('http://') or r.system.web_url.startswith('https://')) %}<a href="{{ r.system.web_url }}" target="_blank" rel="noopener">{{ r.system.web_url }}</a>{% elif r.system.web_url %}{{ r.system.web_url }}{% else %}—{% endif %}
         {% endif %}
       </td>
       <td>{% for t in r.system.tags %}<span class="tag">{{ t }}</span>{% endfor %}</td>

@@ -24,10 +24,14 @@ COPY pyproject.toml ./
 COPY app ./app
 RUN pip install --upgrade pip && pip install .
 
-# Run as a non-root user; /data is a mounted volume it must own.
+# Create the unprivileged user that the app runs as.
 RUN useradd --system --create-home argus \
     && mkdir -p /data && chown -R argus:argus /data /app
-USER argus
+
+# Entrypoint starts as root, fixes /data ownership for any mount, then drops to
+# 'argus' and execs the app — so operators can mount any folder at /data.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 VOLUME ["/data"]
 EXPOSE 8080
@@ -36,4 +40,5 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz').status==200 else 1)"
 
 # Honors SECSCAN_HOST/PORT/RELOAD via the module entrypoint.
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["python", "-m", "app"]

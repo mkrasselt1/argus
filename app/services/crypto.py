@@ -43,6 +43,66 @@ def decrypt(token: str) -> str | None:
         return None
 
 
+# ---- collector_config secrets at rest ------------------------------------
+# A system's collector_config may hold secrets (SSH password, API tokens). We
+# encrypt those values at rest with the Fernet key above and decrypt them only
+# in memory, right before a collector runs. Encrypted values carry a sentinel
+# prefix so a config can be re-saved repeatedly without double-encrypting.
+
+ENC_PREFIX = "enc:v1:"
+# Keys whose values are treated as secrets and encrypted at rest.
+SECRET_CONFIG_KEYS = {"password", "token", "secret", "api_key", "apikey"}
+
+
+def _walk_config(value, key_is_secret: bool, transform):
+    if isinstance(value, dict):
+        return {k: _walk_config(v, k.lower() in SECRET_CONFIG_KEYS, transform)
+                for k, v in value.items()}
+    if isinstance(value, list):
+        return [_walk_config(v, key_is_secret, transform) for v in value]
+    if key_is_secret and isinstance(value, str) and value:
+        return transform(value)
+    return value
+
+
+def encrypt_config(config: dict | None) -> dict:
+    """Return a copy of the collector config with secret fields encrypted."""
+    if not config:
+        return config or {}
+
+    def enc(v: str) -> str:
+        if v.startswith(ENC_PREFIX):
+            return v  # already encrypted — don't wrap twice
+        return ENC_PREFIX + encrypt(v)
+
+    return _walk_config(config, False, enc)
+
+
+def decrypt_config(config: dict | None) -> dict:
+    """Return a copy of the collector config with secret fields decrypted."""
+    if not config:
+        return config or {}
+
+    def dec(v: str) -> str:
+        if not v.startswith(ENC_PREFIX):
+            return v
+        plain = decrypt(v[len(ENC_PREFIX):])
+        return plain if plain is not None else v
+
+    # Decrypt any ENC_PREFIX string regardless of key name (keys are stable, but
+    # be forgiving if a secret was stored under an unexpected key).
+    def walk(value):
+        if isinstance(value, dict):
+            return {k: walk(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [walk(v) for v in value]
+        if isinstance(value, str) and value.startswith(ENC_PREFIX):
+            return dec(value)
+        return value
+
+    return walk(config)
+
+
 # ---- asymmetric (zero-knowledge) credential crypto -----------------------
 # Each agent owns an X25519 keypair. Secrets are sealed to its public key so
 # only that agent can open them (ECIES: ephemeral X25519 + HKDF + AES-GCM). The

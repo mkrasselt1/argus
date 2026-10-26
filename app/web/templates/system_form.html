@@ -4,6 +4,7 @@
 <a href="{{ ('/systems/' ~ system.id) if edit else '/' }}" class="muted">← zurück</a>
 <h1>{{ "System bearbeiten" if edit else "System hinzufügen" }}</h1>
 <form method="post" action="{{ ('/systems/' ~ system.id ~ '/edit') if edit else '/systems' }}" class="form">
+  {% include "_csrf.html" %}
   <label>Name <input name="name" required placeholder="z.B. NAS Keller" value="{{ system.name if edit else '' }}"></label>
   <label>Typ
     <select name="kind">
@@ -42,6 +43,7 @@
 {% if edit %}
 <form method="post" action="/systems/{{ system.id }}/delete" class="form" style="margin-top:1rem"
       onsubmit="return confirm('System „{{ system.name }}“ und alle seine Scans wirklich löschen?');">
+  {% include "_csrf.html" %}
   <button class="btn small" type="submit" style="background:var(--high)">System löschen</button>
 </form>
 {% endif %}

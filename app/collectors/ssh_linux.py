@@ -7,6 +7,9 @@ installs, upgrades or changes anything on the target.
 
 collector_config keys:
     host, port (22), username, password | key_filename
+    host_key_policy  "reject" (default, verify host key) | "auto" (trust on first
+                     use via AutoAddPolicy — opt-in, weaker)
+    known_hosts      optional path to a known_hosts file to verify the host key
     sudo       (bool) prefix update-check with sudo -n (non-interactive)
     via        optional jump host to tunnel through (same keys), e.g. a VPN
                edge node that can reach an otherwise isolated device:
@@ -77,7 +80,21 @@ def _connect(config: dict, sock=None):
         )
 
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    # Host-key verification (MITM protection). Default is to REJECT unknown
+    # hosts; AutoAdd (trust-on-first-use) must be explicitly opted into with
+    # "host_key_policy": "auto". A "known_hosts" path can pin expected keys.
+    client.load_system_host_keys()
+    known_hosts = config.get("known_hosts")
+    if known_hosts:
+        try:
+            client.load_host_keys(known_hosts)
+        except OSError as exc:
+            log.warning("ssh_linux: cannot load known_hosts %s: %s", known_hosts, exc)
+    policy = str(config.get("host_key_policy", "reject")).lower()
+    if policy == "auto":
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    else:
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
     connect_kwargs = {
         "hostname": config["host"],
         "port": int(config.get("port", 22)),

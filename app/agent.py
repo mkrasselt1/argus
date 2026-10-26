@@ -14,14 +14,18 @@ agent has its own revocable credential (see app/services/enrollment.py).
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import json
 import logging
 import os
 import platform
 import socket
+import ssl
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 
@@ -52,6 +56,59 @@ def _primary_ip() -> str | None:
         s.close()
 
 
+def _fetch_leaf_cert_der(host: str, port: int, timeout: float = 20.0) -> bytes:
+    """Fetch the server's leaf certificate (DER) without trusting any CA."""
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    with socket.create_connection((host, port), timeout=timeout) as sock:
+        with ctx.wrap_socket(sock, server_hostname=host) as ssock:
+            der = ssock.getpeercert(binary_form=True)
+    if not der:
+        raise RuntimeError("no server certificate presented")
+    return der
+
+
+def _normalise_fingerprint(fp: str) -> str:
+    return fp.split("sha256:", 1)[-1].replace(":", "").strip().lower()
+
+
+def _verify_pinned_fingerprint(server: str, fingerprint: str) -> None:
+    """Pin the server's TLS leaf cert to the SHA-256 carried in the join token.
+
+    Raises RuntimeError on mismatch (or on a non-HTTPS server, which cannot be
+    pinned). This runs before every request so a swapped server certificate is
+    caught on join AND on every push.
+    """
+    u = urlparse(server)
+    if u.scheme != "https":
+        raise RuntimeError(f"fingerprint pinning requires https, got {server!r}")
+    host = u.hostname
+    port = u.port or 443
+    der = _fetch_leaf_cert_der(host, port)
+    got = hashlib.sha256(der).hexdigest()
+    want = _normalise_fingerprint(fingerprint)
+    if not want or not hmac.compare_digest(got, want):
+        raise RuntimeError(
+            f"server TLS fingerprint mismatch for {host}:{port}: "
+            f"got sha256:{got}, expected sha256:{want}"
+        )
+
+
+def _make_client(server: str, fingerprint: str | None, insecure: bool, timeout: float) -> httpx.Client:
+    """Build an httpx client with the right TLS posture.
+
+    * fingerprint present → pin it first (preflight), then the request itself
+      skips CA verification (the cert is typically self-signed; the pin is the
+      trust anchor);
+    * no fingerprint → normal CA verification, unless --insecure was passed.
+    """
+    if fingerprint:
+        _verify_pinned_fingerprint(server, fingerprint)
+        return httpx.Client(timeout=timeout, verify=False)
+    return httpx.Client(timeout=timeout, verify=not insecure)
+
+
 def _load_config() -> dict:
     return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 
@@ -72,7 +129,7 @@ def cmd_join(args) -> int:
         log.error("Join-Token unvollständig (server/code fehlen)")
         return 2
     name = args.name or socket.gethostname()
-    verify = info.get("fingerprint") or not args.insecure
+    fingerprint = info.get("fingerprint")
 
     # Zero-knowledge key setup: generate our keypair, protect the private key
     # with a random passphrase the SERVER will hold, keep only the ciphertext.
@@ -80,7 +137,12 @@ def cmd_join(args) -> int:
     passphrase = secrets.token_urlsafe(24)
     enc_privkey = crypto.encrypt_privkey(priv_b64, passphrase)
 
-    with httpx.Client(timeout=30, verify=(verify if isinstance(verify, bool) else True)) as c:
+    try:
+        client_ctx = _make_client(server, fingerprint, args.insecure, timeout=30)
+    except RuntimeError as exc:
+        log.error("TLS-Pinning fehlgeschlagen: %s", exc)
+        return 1
+    with client_ctx as c:
         resp = c.post(f"{server}/enroll", json={
             "name": name, "hostname": socket.gethostname(), "code": info["code"],
             "pubkey": pub_b64, "key_passphrase": passphrase,
@@ -124,7 +186,8 @@ def cmd_set_cred(args) -> int:
     headers = {"X-Client-Id": cfg["client_id"], "X-Client-Token": cfg["client_secret"]}
     body = {"module": args.module, "sealed": sealed,
             "username": args.username, "label": args.label, "match": args.target}
-    with httpx.Client(timeout=30) as c:
+    with _make_client(cfg["server"], cfg.get("fingerprint"), cfg.get("insecure", False),
+                      timeout=30) as c:
         r = c.post(f"{cfg['server']}/credentials/upload", json=body, headers=headers)
     if r.status_code == 200:
         log.info("Zugangsdaten für '%s' verschlüsselt hinterlegt (Server kann sie nicht lesen).",
@@ -172,7 +235,10 @@ def _push_once(cfg: dict, ram_creds: dict | None = None) -> dict:
         "result": result.to_dict(),
     }
     headers = {"X-Client-Id": cfg["client_id"], "X-Client-Token": cfg["client_secret"]}
-    with httpx.Client(timeout=120) as c:
+    # Pin the server TLS fingerprint (if the join token carried one) on EVERY
+    # push, not just at join, so a swapped server certificate is always caught.
+    with _make_client(cfg["server"], cfg.get("fingerprint"), cfg.get("insecure", False),
+                      timeout=120) as c:
         resp = c.post(f"{cfg['server']}/ingest", json=payload, headers=headers)
     resp.raise_for_status()
     return resp.json()

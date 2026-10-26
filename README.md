@@ -176,13 +176,46 @@ Setze `SECSCAN_ADMIN_PASSWORD`, dann verlangt die Web-UI ein Login
 | Variable | Zweck |
 |---|---|
 | `SECSCAN_ADMIN_PASSWORD` | UI-Login aktivieren |
+| `SECSCAN_ALLOW_NO_AUTH` | Nur-Opt-out: offene UI ohne Passwort auf Nicht-Loopback-Host erlauben (gefährlich) |
 | `SECSCAN_SECRET_KEY` | Session-Cookie-Secret |
+| `SECSCAN_SECURE_COOKIES` | Session-Cookie als `Secure` markieren (Standard 1; nur für lokales HTTP auf 0) |
 | `SECSCAN_INGEST_TOKEN` | Shared-Token für Push (optional, pro-Client-Auth bevorzugt) |
-| `SECSCAN_CRYPTO_KEY` | Fernet-Key für serverseitige Verschlüsselung (sonst abgeleitet) |
+| `SECSCAN_CRYPTO_KEY` | Fernet-Key für serverseitige Verschlüsselung (sonst abgeleitet; Warnung im Log) |
+| `SECSCAN_AGENT_TOKEN` | Agent/Relay-Modus aktivieren (`/agent/collect`) |
+| `SECSCAN_AGENT_ALLOWED_COLLECTORS` | Erlaubte Collectors für `/agent/collect` (Default ohne `relay`) |
+| `SECSCAN_PUBLIC_URL` | Öffentliche Basis-URL für Install-Skripte/Join-Token (statt Host-Header) |
 | `SECSCAN_SCAN_INTERVAL_MINUTES` | periodischer Komplett-Scan (0 = aus) |
 | `SECSCAN_SCAN_RETENTION` | Scans pro System behalten (0 = unbegrenzt) |
 | `SECSCAN_DATABASE_URL` | DB (Standard SQLite; Postgres für Produktiv) |
 | `SECSCAN_RELOAD` | Dev: Auto-Reload bei Code-Änderung |
+
+### Härtung & Sicherheitsverhalten
+
+- **Start-Schutz:** Ohne `SECSCAN_ADMIN_PASSWORD` **und** Bind auf einen
+  Nicht-Loopback-Host (Default `0.0.0.0`) **startet der Server nicht** — er würde
+  sonst eine offene Admin-UI ins Netz stellen. Abhilfe: Passwort setzen,
+  `SECSCAN_HOST=127.0.0.1`, oder bewusst `SECSCAN_ALLOW_NO_AUTH=1`.
+- **CSRF:** Alle zustandsändernden UI-Formulare tragen ein Per-Session-CSRF-Token
+  (verstecktes Feld, serverseitig geprüft). Maschinen-Endpunkte (`/ingest`,
+  `/enroll`, `/agent/collect`, `/credentials/upload`) nutzen Token-/Client-Auth
+  statt Cookies und sind ausgenommen. Session-Cookie: `Secure` + `SameSite=Lax`,
+  global `Referrer-Policy: no-referrer`. `POST /logout`.
+- **Agent↔System-Bindung:** Ein pro-Client-authentifizierter Agent wird beim
+  ersten Push fest an **ein** System gebunden; spätere Pushes auf ein anderes
+  System werden mit **403** abgelehnt (kein Fremd-Auto-Register).
+- **TLS-Pinning (Agent):** Trägt der Join-Token einen `fingerprint` (sha256:…),
+  pinnt der Agent das Server-Leaf-Zertifikat bei **jedem** Join und Push.
+- **Secrets at rest:** Geheime Felder der `collector_config` (`password`, `token`,
+  `secret`, …) werden verschlüsselt gespeichert und nur im RAM kurz vor dem
+  Collector-Lauf entschlüsselt.
+- **SSH:** Host-Key wird standardmäßig **verifiziert** (RejectPolicy); `"host_key_policy":"auto"`
+  (+ optional `"known_hosts"`) ist bewusster Opt-out.
+- **Rate-Limiting:** `/login` (10/5 min + Lockout) und `/enroll` (20/min) pro IP;
+  `/ingest` begrenzt Paket-/Vuln-Anzahl und Body-Größe.
+- **`/data` just works:** Der Container-Entrypoint legt `/data` an und übernimmt
+  die Rechte für den `argus`-Nutzer, bevor er die Privilegien ablegt — ein
+  Host-Bind-Mount mit beliebigem Owner (z.B. in Plesk) führt nicht mehr zu
+  `sqlite3.OperationalError: unable to open database file`.
 
 ## Lokal starten
 
@@ -202,8 +235,11 @@ APP_VERSION=$(git rev-parse --short HEAD) docker compose up -d --build
 ```
 
 - DB liegt im Volume `secscan-data` → übersteht Redeploys.
-- Der Docker-Socket wird **read-only** eingehängt, damit die auf dem Host
-  laufenden Container analysiert werden können.
+- Der rohe Docker-Socket wird **standardmäßig NICHT** eingehängt (in
+  `docker-compose.yml` auskommentiert). Ein `/var/run/docker.sock`-Mount gibt dem
+  Container faktisch **Root auf dem Host** (auch `:ro`). Der `docker`-Collector
+  gehört auf einen **dedizierten Edge-Agenten** neben den Docker-Host oder hinter
+  einen **read-only docker-socket-proxy** — nicht auf den zentralen Server.
 - `SCHEMA_REVISION` (in [`app/__init__.py`](app/__init__.py)) + `schema_meta`-Tabelle
   verhindern, dass ein älteres Image gegen eine neuere DB startet.
 

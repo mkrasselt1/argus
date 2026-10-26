@@ -13,13 +13,16 @@
     <span class="muted small">Wird über <strong>{{ system.discovered_via }}</strong> aktualisiert</span>
     {% else %}
     <form method="post" action="/systems/{{ system.id }}/scan" class="inline">
+      {% include "_csrf.html" %}
       <button class="btn" type="submit" title="Server scannt selbst (Pull/Relay)">Jetzt scannen</button>
     </form>
     <form method="post" action="/systems/{{ system.id }}/command" class="inline">
+      {% include "_csrf.html" %}
       <input type="hidden" name="cmd_type" value="rescan">
       <button class="btn small" type="submit" title="Befehl für Push-Client hinterlegen – wird beim nächsten Poll ausgeführt">Neu-Scan anfordern (Push)</button>
     </form>
     <form method="post" action="/systems/{{ system.id }}/command" class="inline" title="Poll-Intervall des Push-Clients setzen (z.B. beim Debuggen hochdrehen)">
+      {% include "_csrf.html" %}
       <input type="hidden" name="cmd_type" value="set_interval">
       <select name="minutes" class="mini">
         <option value="1">1 Min</option>
@@ -32,6 +35,7 @@
     </form>
     {% if system.collector == "network_discovery" %}
     <form method="post" action="/systems/{{ system.id }}/command" class="inline" title="Portliste für den Scan vom Server vorgeben">
+      {% include "_csrf.html" %}
       <input type="hidden" name="cmd_type" value="set_config">
       <select name="ports" class="mini">
         <option value="common">Ports: common (~42)</option>
@@ -60,7 +64,7 @@
       <dt>IP</dt><dd>{{ system.ip_address or "—" }}</dd>
       {% if system.mac %}<dt>MAC</dt><dd>{{ system.mac }}</dd>{% endif %}
       <dt>Host</dt><dd>{{ system.hostname or "—" }}</dd>
-      <dt>Web-UI</dt><dd>{% if system.web_url %}<a href="{{ system.web_url }}" target="_blank" rel="noopener">{{ system.web_url }}</a>{% else %}—{% endif %}</dd>
+      <dt>Web-UI</dt><dd>{% if system.web_url and (system.web_url.startswith('http://') or system.web_url.startswith('https://')) %}<a href="{{ system.web_url }}" target="_blank" rel="noopener">{{ system.web_url }}</a>{% elif system.web_url %}{{ system.web_url }}{% else %}—{% endif %}</dd>
       <dt>Collector</dt><dd>{{ system.collector }}</dd>
     </dl>
     {% if system.access_notes %}<pre class="notes">{{ system.access_notes }}</pre>{% endif %}
@@ -187,6 +191,7 @@
           {% if p.name in snoozes %}
             <span class="badge unknown" title="Update ausgesetzt">⏸ Snooze bis {{ snoozes[p.name].until.strftime("%Y-%m-%d") }}</span>
             <form method="post" action="/systems/{{ system.id }}/unsnooze" class="inline">
+              {% include "_csrf.html" %}
               <input type="hidden" name="component" value="{{ p.name }}">
               <button class="copy" type="submit">aufheben</button>
             </form>
@@ -198,6 +203,7 @@
             {% endif %}
             {% if p.extra and p.extra.get("update_source") %}<span class="muted small">· {{ p.extra.get("update_source") }}: {{ p.extra.get(p.extra.get("update_source") ~ "_id") }}</span>{% endif %}
             <form method="post" action="/systems/{{ system.id }}/snooze" class="inline" title="Update aussetzen">
+              {% include "_csrf.html" %}
               <input type="hidden" name="component" value="{{ p.name }}">
               <select name="days" class="mini"><option value="7">7T</option><option value="30" selected>30T</option><option value="90">90T</option></select>
               <button class="copy" type="submit">Snooze</button>

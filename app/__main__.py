@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import uvicorn
 
-from app.config import settings
+from app.config import enforce_startup_safety, settings, warn_weak_keys
 
 
 def main() -> None:
+    # Fail fast on an unauthenticated UI exposed to the network; warn on
+    # derived crypto keys. Both run before the server binds a port.
+    enforce_startup_safety()
+    warn_weak_keys()
     uvicorn.run(
         "app.main:app",
         host=settings.host,

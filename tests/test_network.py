@@ -5,6 +5,7 @@ import tempfile
 
 os.environ.setdefault("SECSCAN_DATABASE_URL", f"sqlite:///{tempfile.mktemp(suffix='.db')}")
 os.environ.setdefault("SECSCAN_SCAN_INTERVAL_MINUTES", "0")
+os.environ.setdefault("SECSCAN_SECURE_COOKIES", "0")
 
 from app.collectors import network_discovery as nd  # noqa: E402
 

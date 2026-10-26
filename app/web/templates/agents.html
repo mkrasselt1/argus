@@ -8,6 +8,7 @@
   <p class="muted small">Erzeugt einen kurzlebigen Join-Token für einen Ein-Zeilen-Install-Befehl.
     Der Agent tauscht ihn einmalig gegen ein eigenes, dauerhaftes Secret.</p>
   <form method="post" action="/agents/code" class="form" style="max-width:640px">
+    {% include "_csrf.html" %}
     <div class="row2">
       <label>Label <input name="label" placeholder="z.B. Kunde-A Prod"></label>
       <label>Gruppe <input name="group" placeholder="optional"></label>
@@ -24,11 +25,11 @@
   <div class="pending" style="margin-top:1rem">
     <strong>Fertiger Install-Befehl</strong> (einmalig gültig — jetzt auf dem Agenten ausführen):
     <p class="muted small" style="margin:.5rem 0 .2rem">🐧 Linux / NAS / Raspberry Pi:</p>
-    <div class="cmd"><code>curl -fsSL {{ request.base_url }}install.sh | sh -s -- --join {{ join }}</code>
-      <button class="copy" type="button" data-cmd="curl -fsSL {{ request.base_url }}install.sh | sh -s -- --join {{ join }}">kopieren</button></div>
+    <div class="cmd"><code>curl -fsSL {{ base_url }}install.sh | sh -s -- --join {{ join }}</code>
+      <button class="copy" type="button" data-cmd="curl -fsSL {{ base_url }}install.sh | sh -s -- --join {{ join }}">kopieren</button></div>
     <p class="muted small" style="margin:.5rem 0 .2rem">🪟 Windows (als Admin):</p>
-    <div class="cmd"><code>iwr -useb {{ request.base_url }}install.ps1 | iex; Install-ArgusAgent -Join '{{ join }}'</code>
-      <button class="copy" type="button" data-cmd="iwr -useb {{ request.base_url }}install.ps1 | iex; Install-ArgusAgent -Join '{{ join }}'">kopieren</button></div>
+    <div class="cmd"><code>iwr -useb {{ base_url }}install.ps1 | iex; Install-ArgusAgent -Join '{{ join }}'</code>
+      <button class="copy" type="button" data-cmd="iwr -useb {{ base_url }}install.ps1 | iex; Install-ArgusAgent -Join '{{ join }}'">kopieren</button></div>
     <p class="muted small" style="margin:.4rem 0 0">Installiert den Agenten in ein venv, meldet ihn an und registriert einen Dienst/Task.
       Für einen Netzwerk-Scan-Agent zusätzlich <code>--collector network_discovery --config '{"targets":["192.168.0.0/24"]}'</code> anhängen (Linux).</p>
   </div>
@@ -46,6 +47,7 @@
   <p class="muted small" style="margin-top:.6rem"><strong>Oder zentral hier</strong> — das Secret wird
     <strong>in deinem Browser</strong> auf den Schlüssel des Agenten verschlüsselt und nur als Blob gesendet:</p>
   <form id="cred-e2e" class="form" style="max-width:640px">
+    {% include "_csrf.html" %}
     <div class="row2">
       <label>Ziel-Agent
         <select name="client_db_id" required>
@@ -74,7 +76,7 @@
         <td class="muted small">{{ c.label or "—" }}</td>
         <td class="muted small">{{ c.username or "—" }}</td>
         <td class="muted small">{{ c.match or "alle" }}</td>
-        <td><form method="post" action="/credentials/{{ c.id }}/delete" class="inline"><button class="copy" type="submit">löschen</button></form></td>
+        <td><form method="post" action="/credentials/{{ c.id }}/delete" class="inline">{% include "_csrf.html" %}<button class="copy" type="submit">löschen</button></form></td>
       </tr>
     {% endfor %}
     </tbody>
@@ -103,10 +105,10 @@
       <td class="muted small">{{ c.last_ip or "—" }}</td>
       <td>
         {% if c.status.value != "approved" %}
-        <form method="post" action="/agents/{{ c.id }}/approve" class="inline"><button class="btn small" type="submit">Freigeben</button></form>
+        <form method="post" action="/agents/{{ c.id }}/approve" class="inline">{% include "_csrf.html" %}<button class="btn small" type="submit">Freigeben</button></form>
         {% endif %}
         {% if c.status.value != "revoked" %}
-        <form method="post" action="/agents/{{ c.id }}/revoke" class="inline"><button class="btn small" type="submit" style="background:var(--high)">Sperren</button></form>
+        <form method="post" action="/agents/{{ c.id }}/revoke" class="inline">{% include "_csrf.html" %}<button class="btn small" type="submit" style="background:var(--high)">Sperren</button></form>
         {% endif %}
       </td>
     </tr>
@@ -154,6 +156,7 @@ if (form) form.addEventListener("submit", async (e) => {
     const body = new URLSearchParams({
       client_db_id: clientId, module: f.get("module"), sealed,
       username: f.get("username") || "", match: f.get("match") || "", label: "",
+      csrf_token: f.get("csrf_token") || "",
     });
     const r = await fetch("/credentials", { method: "POST", body,
       headers: { "Content-Type": "application/x-www-form-urlencoded" } });

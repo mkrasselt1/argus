@@ -133,8 +133,16 @@ def _run_json(cmd: list[str]) -> dict | None:
         return None
 
 
+def _reject_option_like(value: str, what: str) -> None:
+    """Reject refs/URLs that could be parsed as CLI options (argument injection)."""
+    if isinstance(value, str) and value.startswith("-"):
+        raise ValueError(f"docker: refusing {what} that starts with '-': {value!r}")
+
+
 def _trivy_scan(ref: str) -> tuple[list[PackageResult], list[VulnResult]]:
-    data = _run_json([settings.trivy_bin, "image", "--quiet", "--format", "json", ref])
+    _reject_option_like(ref, "image ref")
+    # "--" stops trivy from treating a crafted ref as a flag.
+    data = _run_json([settings.trivy_bin, "image", "--quiet", "--format", "json", "--", ref])
     pkgs: list[PackageResult] = []
     vulns: list[VulnResult] = []
     if not data:
@@ -168,7 +176,8 @@ def _trivy_scan(ref: str) -> tuple[list[PackageResult], list[VulnResult]]:
 
 
 def _syft_scan(ref: str) -> list[PackageResult]:
-    data = _run_json([settings.syft_bin, "-q", "-o", "syft-json", ref])
+    _reject_option_like(ref, "image ref")
+    data = _run_json([settings.syft_bin, "-q", "-o", "syft-json", "--", ref])
     pkgs: list[PackageResult] = []
     if not data:
         return pkgs
@@ -191,6 +200,11 @@ class DockerCollector:
     def collect(self, config: dict) -> CollectResult:
         base_url = config.get("base_url") or None
         targets = config.get("targets", "running")
+        if base_url:
+            _reject_option_like(base_url, "base_url")
+        if isinstance(targets, list):
+            for t in targets:
+                _reject_option_like(t, "target ref")
 
         client = _docker_client(base_url)
         refs = _resolve_targets(client, targets)

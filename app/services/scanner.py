@@ -141,7 +141,11 @@ def run_scan(system_id: int) -> Scan:
             return scan
 
         try:
-            result = collector.collect(dict(system.collector_config or {}))
+            from app.services import crypto
+            # Decrypt secret fields (password/token/...) in memory just before
+            # the collector runs; they are stored encrypted at rest.
+            run_config = crypto.decrypt_config(dict(system.collector_config or {}))
+            result = collector.collect(run_config)
         except Exception as exc:  # collector failure must not crash the app
             log.exception("Scan failed for system %s", system_id)
             scan.status = ScanStatus.error
@@ -173,15 +177,36 @@ def ingest_result(
     hostname: str | None = None,
     ip_address: str | None = None,
     auto_register: bool = True,
+    client_db_id: int | None = None,
 ) -> Scan:
     """Store a result **pushed by a client** (client -> server).
 
     The client runs a collector locally and POSTs the result here, so the
     server never needs an inbound path to the client. The system is matched by
     name; unknown systems are created when auto_register is enabled.
+
+    When ``client_db_id`` is given (a per-client authenticated agent), the agent
+    is bound to exactly one system: on its first push the matched/created system
+    is recorded on the Client, and every later push must target that same system
+    (otherwise a PermissionError is raised). This stops an authenticated agent
+    from writing to — or auto-registering — systems that are not its own.
     """
+    from app.models import Client
+
     with Session(engine) as session:
         system = session.exec(select(System).where(System.name == system_name)).first()
+
+        # ---- agent <-> system binding (per-client agents only) ------------
+        client_row = session.get(Client, client_db_id) if client_db_id is not None else None
+        if client_row is not None and client_row.system_id is not None:
+            # Already bound: the push must resolve to the bound system.
+            if system is None or system.id != client_row.system_id:
+                bound = session.get(System, client_row.system_id)
+                raise PermissionError(
+                    f"agent is bound to system '{bound.name if bound else client_row.system_id}' "
+                    f"and may not write to '{system_name}'"
+                )
+
         if system is None:
             if not auto_register:
                 raise ValueError(f"Unknown system '{system_name}' and auto-register is off")
@@ -199,6 +224,12 @@ def ingest_result(
             session.add(system)
             session.commit()
             session.refresh(system)
+
+        # First push from a per-client agent binds it to this system for good.
+        if client_row is not None and client_row.system_id is None:
+            client_row.system_id = system.id
+            session.add(client_row)
+            session.commit()
 
         scan = Scan(system_id=system.id, collector=collector, status=ScanStatus.running)
         session.add(scan)

@@ -14,11 +14,13 @@ collector_config keys:
     token            shared agent token (matches the agent's SECSCAN_AGENT_TOKEN)
     collector        name of the collector the agent should run
     config           config dict passed to that inner collector
-    verify           TLS verification: true (default), false, or CA bundle path
+    verify           TLS verification: true (default) or a CA bundle path that
+                     exists on disk. Disabling verification is not allowed.
 """
 from __future__ import annotations
 
 import logging
+import os
 
 import httpx
 
@@ -26,6 +28,29 @@ from app.collectors.base import CollectResult, register
 from app.config import settings
 
 log = logging.getLogger(__name__)
+
+
+def _resolve_verify(verify):
+    """Validate the relay TLS 'verify' option.
+
+    Disabling TLS verification turns the relay into an easy MITM/SSRF target, so
+    it is forbidden. Accept only: True (verify with system CAs) or a path to a CA
+    bundle that exists on disk.
+    """
+    if verify is True:
+        return True
+    if isinstance(verify, str):
+        low = verify.strip().lower()
+        if low in ("true", "1", "yes"):
+            return True
+        if low in ("false", "0", "no", ""):
+            raise ValueError("relay: TLS verification cannot be disabled (verify=false)")
+        if not os.path.exists(verify):
+            raise ValueError(f"relay: CA bundle not found: {verify}")
+        return verify
+    if verify is False:
+        raise ValueError("relay: TLS verification cannot be disabled (verify=false)")
+    raise ValueError(f"relay: invalid 'verify' value: {verify!r}")
 
 
 class RelayCollector:
@@ -42,7 +67,7 @@ class RelayCollector:
                 raise ValueError("relay: refusing to relay to the same agent (loop)")
 
         payload = {"collector": inner, "config": config.get("config", {}) or {}}
-        verify = config.get("verify", True)
+        verify = _resolve_verify(config.get("verify", True))
 
         with httpx.Client(timeout=settings.relay_timeout, verify=verify) as client:
             resp = client.post(
