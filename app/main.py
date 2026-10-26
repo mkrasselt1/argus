@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hmac
 import logging
+import re
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -401,7 +402,7 @@ done
 [ -z "$JOIN" ] && {{ echo "error: --join <token> required"; exit 1; }}
 echo "Installing Argus agent into $DIR ..."
 python3 -m venv "$DIR/venv"
-"$DIR/venv/bin/pip" install -q --upgrade pip
+"$DIR/venv/bin/python" -m pip install -q --upgrade pip || true
 "$DIR/venv/bin/pip" install -q "$SERVER/dist/argus-agent.tar.gz"
 export ARGUS_AGENT_CONFIG="$DIR/agent.json"
 "$DIR/venv/bin/argus-agent" join "$JOIN" $EXTRA --interval 60
@@ -434,16 +435,25 @@ function Install-ArgusAgent {{
   $Dir = "$env:ProgramData\\argus-agent"
   Write-Host "Installing Argus agent into $Dir ..."
   python -m venv "$Dir\\venv"
-  & "$Dir\\venv\\Scripts\\pip.exe" install -q --upgrade pip
+  & "$Dir\\venv\\Scripts\\python.exe" -m pip install -q --upgrade pip 2>$null
   & "$Dir\\venv\\Scripts\\pip.exe" install -q "$Server/dist/argus-agent.tar.gz"
   $env:ARGUS_AGENT_CONFIG = "$Dir\\agent.json"
   & "$Dir\\venv\\Scripts\\argus-agent.exe" join $Join --kind windows --collector windows --interval 60
-  $action = New-ScheduledTaskAction -Execute "$Dir\\venv\\Scripts\\argus-agent.exe" -Argument "run"
-  $trigger = New-ScheduledTaskTrigger -AtStartup
+  # The OS scheduler drives the cadence and restarts the agent — robust against
+  # crashes, sleep/hibernate and reboots (a single long-lived loop was not).
+  $action = New-ScheduledTaskAction -Execute "$Dir\\venv\\Scripts\\argus-agent.exe" -Argument "run --once"
+  $atStartup = New-ScheduledTaskTrigger -AtStartup
+  $hourly = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+      -RepetitionInterval (New-TimeSpan -Hours 1) -RepetitionDuration (New-TimeSpan -Days 3650)
+  $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries `
+      -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew `
+      -ExecutionTimeLimit (New-TimeSpan -Minutes 30) `
+      -RestartInterval (New-TimeSpan -Minutes 5) -RestartCount 3
   $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-  Register-ScheduledTask -TaskName "ArgusAgent" -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
+  Register-ScheduledTask -TaskName "ArgusAgent" -Action $action -Trigger $atStartup,$hourly `
+      -Settings $settings -Principal $principal -Force | Out-Null
   Start-ScheduledTask -TaskName "ArgusAgent"
-  Write-Host "Scheduled task 'ArgusAgent' installed and started."
+  Write-Host "Scheduled task 'ArgusAgent' installed (hourly, self-healing) and started."
 }}
 """
 
@@ -693,9 +703,20 @@ def system_detail(system_id: int, request: Request, session: Session = Depends(g
             "changes": changes,
             "snoozes": snoozes,
             "pending_commands": pending_commands,
+            "current_targets": _targets_str(system),
             "severity": _severity_counts(session, last.id) if last else {},
         },
     )
+
+
+def _targets_str(system: System) -> str:
+    """Render the system's configured scan targets as a comma list for the UI."""
+    targets = (system.collector_config or {}).get("targets")
+    if not targets:
+        return ""
+    if isinstance(targets, list):
+        return ", ".join(str(t) for t in targets)
+    return str(targets)
 
 
 def _parse_tags(raw: str) -> list[str]:
@@ -872,23 +893,43 @@ def enqueue_command(
     cmd_type: str = Form("rescan"),
     minutes: int = Form(0),
     ports: str = Form(""),
+    targets: str = Form(""),
+    session: Session = Depends(get_session),
     _: None = Depends(verify_csrf),
 ):
     """Queue a control command; a push-mode client picks it up on its next POST.
 
-    Supports set_interval (polling frequency) and set_config (e.g. hand the agent
-    a port-scan preset/list to use).
+    Supports set_interval (polling frequency) and set_config (hand the agent a
+    port-scan preset/list and/or the subnets/targets to scan — central config,
+    delivered to the agent; not a secret).
     """
     payload = None
     if cmd_type == "set_interval":
         payload = {"minutes": minutes}
-    elif cmd_type == "set_config" and ports:
-        # ports may be a preset name ("top100") or a comma list of ints.
-        if "," in ports or ports.strip().isdigit():
-            plist = [int(p) for p in ports.replace(" ", "").split(",") if p.strip().isdigit()]
-            payload = {"config": {"ports": plist}}
-        else:
-            payload = {"config": {"ports": ports.strip()}}
+    elif cmd_type == "set_config":
+        cfg: dict = {}
+        if ports:
+            # ports may be a preset name ("top100") or a comma list of ints.
+            if "," in ports or ports.strip().isdigit():
+                cfg["ports"] = [int(p) for p in ports.replace(" ", "").split(",")
+                                if p.strip().isdigit()]
+            else:
+                cfg["ports"] = ports.strip()
+        if targets:
+            # comma/space/newline separated CIDRs or hosts.
+            cfg["targets"] = [t.strip() for t in re.split(r"[,\s]+", targets) if t.strip()]
+        if cfg:
+            payload = {"config": cfg}
+            # Persist centrally so the server is the source of truth for this
+            # system's scan config (shown in the UI, re-delivered on re-enroll).
+            # Merge into the stored config; not a secret, stored in clear.
+            system = session.get(System, system_id)
+            if system is not None:
+                merged = dict(system.collector_config or {})
+                merged.update(cfg)
+                system.collector_config = merged
+                session.add(system)
+                session.commit()
     scanner.enqueue_command(system_id, cmd_type, payload)
     return RedirectResponse(f"/systems/{system_id}", status_code=303)
 

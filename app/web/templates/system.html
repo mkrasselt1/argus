@@ -46,6 +46,14 @@
       </select>
       <button class="btn small" type="submit">Portliste setzen</button>
     </form>
+    <form method="post" action="/systems/{{ system.id }}/command" class="inline" title="Zu scannende Subnetze/Hosts zentral vorgeben (CIDR oder Hostnamen, komma-/leerzeichengetrennt) – wird beim nächsten Poll an den Agenten ausgeliefert">
+      {% include "_csrf.html" %}
+      <input type="hidden" name="cmd_type" value="set_config">
+      <input type="text" name="targets" class="mini" style="width:16rem"
+             placeholder="z.B. 192.168.1.0/24, 10.0.0.0/24"
+             value="{{ current_targets }}">
+      <button class="btn small" type="submit">Subnetze setzen</button>
+    </form>
     {% endif %}
     {% endif %}
   </div>

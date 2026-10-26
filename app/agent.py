@@ -251,7 +251,9 @@ def _apply_commands(commands: list[dict], cfg: dict) -> bool:
         if ctype == "rescan":
             rescan = True
         elif ctype == "set_interval":
-            cfg["interval"] = max(0, int(payload.get("minutes", cfg.get("interval", 0))))
+            # Clamp to a sane minimum; never 0 — a 0 interval would exit the
+            # loop-mode agent and leave it dead until the next reboot.
+            cfg["interval"] = max(1, int(payload.get("minutes", cfg.get("interval", 60)) or 60))
         elif ctype == "set_config":
             if "collector" in payload:
                 cfg["collector"] = payload["collector"]
@@ -271,8 +273,11 @@ def cmd_run(args) -> int:
         log.error("Keine Agent-Konfig unter %s — zuerst 'join' ausführen.", CONFIG_PATH)
         return 2
 
+    once = bool(getattr(args, "once", False))
     ram_creds: dict = {}  # server-delivered credentials, kept in memory only
+    rc = 0
     while True:
+        rescan = False
         try:
             data = _push_once(cfg, ram_creds)
             cmds = data.get("commands", []) or []
@@ -281,14 +286,21 @@ def cmd_run(args) -> int:
             ram_creds = _open_credentials(cfg, data)
             if data.get("server_version") and data["server_version"] != __version__:
                 log.warning("Agent-Update verfügbar: %s -> %s", __version__, data["server_version"])
-            if _apply_commands(cmds, cfg):
-                continue
+            rescan = _apply_commands(cmds, cfg)
         except Exception:
             log.exception("Push fehlgeschlagen")
+            rc = 1
+        # --once: one push cycle per invocation (the OS scheduler drives the
+        # cadence and restarts us — robust against crashes/sleep/reboot).
+        # A pending rescan is still honoured immediately before we exit.
+        if once and not rescan:
+            return rc
+        if rescan:
+            continue
         if not cfg.get("interval"):
             break
         time.sleep(int(cfg["interval"]) * 60)
-    return 0
+    return rc
 
 
 def main() -> None:
@@ -308,6 +320,8 @@ def main() -> None:
     j.set_defaults(func=cmd_join)
 
     r = sub.add_parser("run", help="Push-Schleife starten")
+    r.add_argument("--once", action="store_true",
+                   help="einmal pushen und beenden (OS-Scheduler treibt den Takt)")
     r.set_defaults(func=cmd_run)
 
     s = sub.add_parser("set-cred", help="Modul-Zugangsdaten vor Ort verschlüsselt hinterlegen")

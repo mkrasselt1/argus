@@ -136,10 +136,21 @@ iwr -useb https://argus.example/install.ps1 | iex; Install-ArgusAgent -Join '<jo
 ```
 
 Der Installer holt den Agenten als pip-Paket vom Server (`/dist/argus-agent.tar.gz`,
-immer passend zur Server-Version), meldet ihn an und registriert einen Dienst
-(systemd / Scheduled Task). Danach: `argus-agent run` (Push-Schleife).
+immer passend zur Server-Version), meldet ihn an und registriert einen Dienst.
+
+**Scheduling (selbstheilend):**
+- **Linux (systemd):** Dauer-Loop `argus-agent run` mit `Restart=always` — stirbt
+  der Prozess, startet systemd ihn neu.
+- **Windows (Scheduled Task):** `argus-agent run --once` pro Aufruf (ein Push,
+  dann Ende); der Task feuert **stündlich** plus bei Systemstart, mit
+  *StartWhenAvailable* (holt nach Standby/Ruhezustand nach) und Neustart bei
+  Fehler. Der OS-Scheduler treibt den Takt und belebt den Agenten wieder — ein
+  einzelner Dauerprozess (alt) blieb nach Absturz/Standby bis zum Reboot tot.
 Der Server kann über die Poll-Antwort steuern (rescan, Intervall, Portliste,
-Collector-Config) und meldet Agent-Updates. Agenten sind einzeln **freigeb-/
+zu scannende **Subnetze/Hosts** (`targets`, zentral auf der System-Seite setzbar),
+Collector-Config) und meldet Agent-Updates. Die zentral gesetzte Config wird im
+Server gespeichert (kein Geheimnis) und beim nächsten Poll an den Agenten
+ausgeliefert. Agenten sind einzeln **freigeb-/
 sperrbar**; jeder hat ein eigenes, widerrufbares Secret.
 
 ## Geräte-Module & entdeckte Geräte
