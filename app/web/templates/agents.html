@@ -100,8 +100,8 @@
         {% elif c.status.value == "pending" %}<span class="badge med">wartet</span>
         {% else %}<span class="badge err">gesperrt</span>{% endif %}
       </td>
-      <td class="muted small">{{ c.enrolled_at.strftime("%Y-%m-%d %H:%M") }}</td>
-      <td class="muted small">{{ c.last_seen.strftime("%Y-%m-%d %H:%M") if c.last_seen else "—" }}</td>
+      <td class="muted small">{{ c.enrolled_at | localdt }}</td>
+      <td class="muted small">{{ (c.last_seen | localdt) if c.last_seen else "—" }}</td>
       <td class="muted small">{{ c.last_ip or "—" }}</td>
       <td>
         {% if c.status.value != "approved" %}

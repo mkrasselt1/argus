@@ -80,7 +80,7 @@
   <div class="card">
     <h3>Letzter Scan</h3>
     {% if last %}
-      <p class="muted">{{ last.started_at.strftime("%Y-%m-%d %H:%M") }} · {{ last.status.value }}</p>
+      <p class="muted">{{ last.started_at | localdt }} · {{ last.status.value }}</p>
       <ul class="summary">
         {% for k, v in last.summary.items() %}<li><span class="muted">{{ k }}</span> {{ v }}</li>{% endfor %}
       </ul>
@@ -197,7 +197,7 @@
           {% endif %}
         {% elif p.latest_version and p.latest_version != p.version %}
           {% if p.name in snoozes %}
-            <span class="badge unknown" title="Update ausgesetzt">⏸ Snooze bis {{ snoozes[p.name].until.strftime("%Y-%m-%d") }}</span>
+            <span class="badge unknown" title="Update ausgesetzt">⏸ Snooze bis {{ snoozes[p.name].until | localdt(False) }}</span>
             <form method="post" action="/systems/{{ system.id }}/unsnooze" class="inline">
               {% include "_csrf.html" %}
               <input type="hidden" name="component" value="{{ p.name }}">
@@ -243,7 +243,7 @@
   <tbody>
   {% for c in changes %}
     <tr>
-      <td class="muted small">{{ c.detected_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td class="muted small">{{ c.detected_at | localdt }}</td>
       <td>{{ c.name }} {% if c.type %}<span class="chip small">{{ c.type }}</span>{% endif %}</td>
       <td>
         {% if c.change_type == "update_applied" %}<span class="badge ok">Update durchgeführt</span>
@@ -267,7 +267,7 @@
   <tbody>
   {% for h in history %}
     <tr>
-      <td class="muted">{{ h.started_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td class="muted">{{ h.started_at | localdt }}</td>
       <td><span class="badge {{ 'ok' if h.status.value == 'ok' else 'err' }}">{{ h.status.value }}</span></td>
       <td class="muted small">{{ h.error or h.summary }}</td>
     </tr>

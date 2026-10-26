@@ -5,6 +5,7 @@ import hmac
 import logging
 import re
 import secrets
+from datetime import timezone
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 from sqlmodel import Session, select
 
 from app import SCHEMA_REVISION, __version__
@@ -44,6 +46,27 @@ log = logging.getLogger("argus")
 BASE = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE / "web" / "templates"))
 templates.env.globals["auth_enabled"] = settings.auth_enabled()
+
+
+def _localdt(value, with_time: bool = True):
+    """Render a UTC datetime as a <time> element that JS converts to the
+    viewer's local timezone (see base.html). Stored timestamps are UTC; showing
+    them raw confused users whose clock is CET/CEST. No-JS fallback shows UTC.
+    """
+    if value is None:
+        return ""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    value = value.astimezone(timezone.utc)
+    iso = value.strftime("%Y-%m-%dT%H:%M:%SZ")
+    fallback = value.strftime("%Y-%m-%d %H:%M" if with_time else "%Y-%m-%d")
+    dateonly = "" if with_time else ' data-dateonly="1"'
+    return Markup(
+        f'<time datetime="{iso}" data-localdt{dateonly}>{escape(fallback)} UTC</time>'
+    )
+
+
+templates.env.filters["localdt"] = _localdt
 
 scheduler = BackgroundScheduler()
 

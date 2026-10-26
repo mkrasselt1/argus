@@ -35,7 +35,7 @@
       <td>{% for t in r.system.tags %}<span class="tag">{{ t }}</span>{% endfor %}</td>
       <td class="muted small">{{ r.system.collector }}</td>
       <td class="muted small">
-        {% if r.last_scan_at %}{{ r.last_scan_at.strftime("%Y-%m-%d %H:%M") }}
+        {% if r.last_scan_at %}{{ r.last_scan_at | localdt }}
           {% if r.status and r.status != "ok" %}<span class="badge err">{{ r.status }}</span>{% endif %}
         {% else %}<span class="muted">nie</span>{% endif %}
       </td>

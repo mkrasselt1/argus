@@ -28,6 +28,20 @@
   </main>
   <footer>read-only Monitoring · v{{ version or "" }}</footer>
   <script>
+    // Convert UTC <time data-localdt> elements to the viewer's local timezone.
+    (function () {
+      const dtf = new Intl.DateTimeFormat(undefined,
+        { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+      const df = new Intl.DateTimeFormat(undefined,
+        { year: "numeric", month: "2-digit", day: "2-digit" });
+      document.querySelectorAll("time[data-localdt]").forEach(function (el) {
+        const iso = el.getAttribute("datetime");
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return;
+        el.textContent = (el.hasAttribute("data-dateonly") ? df : dtf).format(d);
+        el.title = iso;
+      });
+    })();
     document.addEventListener("click", function (e) {
       const btn = e.target.closest(".copy");
       if (!btn) return;
