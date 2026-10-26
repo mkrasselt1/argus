@@ -282,6 +282,12 @@ def _push_due(cfg: dict) -> bool:
 
 
 def cmd_run(args) -> int:
+    global CONFIG_PATH
+    # Explicit --config wins over the env var / default. The scheduled task runs
+    # as SYSTEM and may not see a freshly set machine env var, so passing the
+    # path directly is the robust way to point the agent at its enrollment.
+    if getattr(args, "config", None):
+        CONFIG_PATH = Path(args.config)
     load_builtin_collectors()
     try:
         cfg = _load_config()
@@ -347,6 +353,8 @@ def main() -> None:
     r = sub.add_parser("run", help="Push-Schleife starten")
     r.add_argument("--once", action="store_true",
                    help="einmal pushen und beenden (OS-Scheduler treibt den Takt)")
+    r.add_argument("--config", default=None,
+                   help="Pfad zur agent.json (sonst ARGUS_AGENT_CONFIG / ~/.argus/agent.json)")
     r.set_defaults(func=cmd_run)
 
     s = sub.add_parser("set-cred", help="Modul-Zugangsdaten vor Ort verschlüsselt hinterlegen")

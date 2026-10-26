@@ -147,8 +147,8 @@ immer passend zur Server-Version), meldet ihn an und registriert einen Dienst.
   Push. Mit *StartWhenAvailable* (holt nach Standby/Ruhezustand nach) und Neustart
   bei Fehler. So lebt die Taktung in der Agent-Config statt in der Task-Definition,
   und der Agent ist gegen Absturz/Standby/Reboot selbstheilend. Der Task läuft als
-  SYSTEM und bekommt `ARGUS_AGENT_CONFIG` (Maschinen-Variable) auf die Enrollment-
-  Datei gesetzt, sonst fände er sie nicht.
+  SYSTEM und bekommt den Config-Pfad direkt per `run --once --config <pfad>`
+  übergeben (robust, unabhängig von Umgebungsvariablen-Propagation).
 Der Server kann über die Poll-Antwort steuern (rescan, Intervall, Portliste,
 zu scannende **Subnetze/Hosts** (`targets`, zentral auf der System-Seite setzbar),
 Collector-Config) und meldet Agent-Updates. Die zentral gesetzte Config wird im

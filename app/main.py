@@ -437,17 +437,15 @@ function Install-ArgusAgent {{
   python -m venv "$Dir\\venv"
   & "$Dir\\venv\\Scripts\\python.exe" -m pip install -q --upgrade pip 2>$null
   & "$Dir\\venv\\Scripts\\pip.exe" install -q "$Server/dist/argus-agent.tar.gz"
-  # The scheduled task runs as SYSTEM, so point the agent at the config file
-  # join writes to. Without this the task would look in SYSTEM's profile and
-  # never find the enrollment (the agent would only ever work when run by hand).
-  [Environment]::SetEnvironmentVariable("ARGUS_AGENT_CONFIG", "$Dir\\agent.json", "Machine")
   $env:ARGUS_AGENT_CONFIG = "$Dir\\agent.json"
   & "$Dir\\venv\\Scripts\\argus-agent.exe" join $Join --kind windows --collector windows --interval 60
   # Heartbeat model: the scheduler just fires often; the agent decides whether
   # its own interval has elapsed (`run --once` is a no-op when not yet due).
   # So the cadence lives in the (centrally settable) agent config, and the task
   # is self-healing against crashes, sleep/hibernate and reboots.
-  $action = New-ScheduledTaskAction -Execute "$Dir\\venv\\Scripts\\argus-agent.exe" -Argument "run --once"
+  # The task runs as SYSTEM and may not see a freshly set env var, so the config
+  # path is passed directly with --config (robust, no cmd wrapper needed).
+  $action = New-ScheduledTaskAction -Execute "$Dir\\venv\\Scripts\\argus-agent.exe" -Argument "run --once --config `"$Dir\\agent.json`""
   $atStartup = New-ScheduledTaskTrigger -AtStartup
   $beat = New-ScheduledTaskTrigger -Once -At (Get-Date) `
       -RepetitionInterval (New-TimeSpan -Minutes 15) -RepetitionDuration (New-TimeSpan -Days 3650)
