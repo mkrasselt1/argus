@@ -49,7 +49,7 @@
   {{ cmd("iwr -useb " ~ base_url ~ "install.ps1 | iex; Test-ArgusAgent") }}
   <p class="muted small" style="margin:.2rem 0">Sofort pushen / Log ansehen</p>
   {{ cmd("Start-ScheduledTask ArgusAgent") }}
-  {{ cmd("Get-Content C:\\ProgramData\\argus-agent\\agent.log -Tail 30") }}
+  {{ cmd("Get-Content C:\\ProgramData\\argus-agent\\agent.log -Tail 30 -Encoding UTF8") }}
   <p class="muted small" style="margin:.2rem 0">Nach Python-Wechsel: venv neu bauen (agent.json bleibt)</p>
   {{ cmd("Stop-ScheduledTask ArgusAgent; Remove-Item -Recurse -Force C:\\ProgramData\\argus-agent\\venv; iwr -useb " ~ base_url ~ "install.ps1 | iex; Update-ArgusAgent") }}
   <p class="muted small" style="margin:.8rem 0 .2rem">🐧 Linux / NAS / Raspberry Pi (als root):</p>

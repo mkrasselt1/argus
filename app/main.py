@@ -530,7 +530,7 @@ function Install-ArgusAgent {{
     Write-Host "Scheduled task 'ArgusAgent' installed (15-min heartbeat, self-gated) - first run OK."
   }} else {{
     Write-Warning ("First task run returned 0x{{0:X}} - see $Dir\\agent.log" -f $res)
-    if (Test-Path "$Dir\\agent.log") {{ Get-Content "$Dir\\agent.log" -Tail 20 }}
+    if (Test-Path "$Dir\\agent.log") {{ Get-Content "$Dir\\agent.log" -Tail 20 -Encoding UTF8 }}
   }}
 }}
 
@@ -549,7 +549,7 @@ function Test-ArgusAgent {{
   Write-Host "Args    : $($a.Arguments)"
   $i = Get-ScheduledTaskInfo -TaskName "ArgusAgent"
   Write-Host ("Last run: $($i.LastRunTime)  result 0x{{0:X}}  next: $($i.NextRunTime)" -f $i.LastTaskResult)
-  if (Test-Path "$Dir\\agent.log") {{ Get-Content "$Dir\\agent.log" -Tail 20 }}
+  if (Test-Path "$Dir\\agent.log") {{ Get-Content "$Dir\\agent.log" -Tail 20 -Encoding UTF8 }}
 }}
 """
 
