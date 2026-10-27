@@ -257,6 +257,7 @@ def _push_once(cfg: dict, ram_creds: dict | None = None) -> dict:
         "kind": cfg.get("kind"),
         "hostname": socket.gethostname(),
         "ip_address": _primary_ip(),
+        "agent_version": __version__,
         "result": result.to_dict(),
     }
     headers = {"X-Client-Id": cfg["client_id"], "X-Client-Token": cfg["client_secret"]}

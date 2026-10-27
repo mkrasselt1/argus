@@ -279,6 +279,7 @@ class IngestRequest(BaseModel):
     kind: str | None = None
     hostname: str | None = None
     ip_address: str | None = None
+    agent_version: str | None = None  # optional: older agents don't send it
 
 
 def _authenticate_ingest(
@@ -373,6 +374,12 @@ def ingest(req: IngestRequest, request: Request,
 
     with Session(engine) as session:
         commands = scanner.take_pending_commands(session, scan.system_id)
+        if client is not None and req.agent_version:
+            row = session.get(Client, client.id)
+            if row is not None and row.agent_version != req.agent_version:
+                row.agent_version = req.agent_version
+                session.add(row)
+                session.commit()
     from app.services import credentials
 
     resp = {"ok": True, "scan_id": scan.id, "commands": commands,

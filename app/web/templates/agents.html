@@ -36,6 +36,31 @@
   {% endif %}
 </section>
 
+{% macro cmd(text) %}<div class="cmd"><code>{{ text }}</code>
+  <button class="copy" type="button" data-cmd="{{ text }}">kopieren</button></div>{% endmacro %}
+<section class="card" style="margin-bottom:1.2rem">
+  <h3>Agenten aktualisieren &amp; prüfen</h3>
+  <p class="muted small">Auf dem Agenten ausführen. Das Update behält die Anmeldung
+    (kein neuer Agenten-Eintrag) und holt Agent + Task passend zur Server-Version {{ version }}.</p>
+  <p class="muted small" style="margin:.6rem 0 .2rem">🪟 Windows (PowerShell als Admin):</p>
+  <p class="muted small" style="margin:.2rem 0">Update</p>
+  {{ cmd("iwr -useb " ~ base_url ~ "install.ps1 | iex; Update-ArgusAgent") }}
+  <p class="muted small" style="margin:.2rem 0">Diagnose (Task, letztes Ergebnis, Log)</p>
+  {{ cmd("iwr -useb " ~ base_url ~ "install.ps1 | iex; Test-ArgusAgent") }}
+  <p class="muted small" style="margin:.2rem 0">Sofort pushen / Log ansehen</p>
+  {{ cmd("Start-ScheduledTask ArgusAgent") }}
+  {{ cmd("Get-Content C:\\ProgramData\\argus-agent\\agent.log -Tail 30") }}
+  <p class="muted small" style="margin:.2rem 0">Nach Python-Wechsel: venv neu bauen (agent.json bleibt)</p>
+  {{ cmd("Stop-ScheduledTask ArgusAgent; Remove-Item -Recurse -Force C:\\ProgramData\\argus-agent\\venv; iwr -useb " ~ base_url ~ "install.ps1 | iex; Update-ArgusAgent") }}
+  <p class="muted small" style="margin:.8rem 0 .2rem">🐧 Linux / NAS / Raspberry Pi (als root):</p>
+  <p class="muted small" style="margin:.2rem 0">Update</p>
+  {{ cmd("curl -fsSL " ~ base_url ~ "install.sh | sh") }}
+  <p class="muted small" style="margin:.2rem 0">Status / Log</p>
+  {{ cmd("systemctl status argus-agent --no-pager; tail -n 30 /opt/argus-agent/agent.log") }}
+  <p class="muted small" style="margin:.6rem 0 0">Windows braucht Python für alle Benutzer
+    (python.org, „Install for all users“), Version mit fertigen Paketen — derzeit 3.14.</p>
+</section>
+
 <section class="card" style="margin-bottom:1.2rem">
   <h3>Modul-Zugangsdaten (Zero-Knowledge, verschlüsselt auf den Agent)</h3>
   <p class="muted small">Für Module mit Login (Home Assistant, OctoPrint …). Das Secret wird
@@ -89,7 +114,7 @@
   <p class="muted">Noch keine Agenten angelernt.</p>
 {% else %}
 <table class="grid">
-  <thead><tr><th>Name</th><th>Client-ID</th><th>Status</th><th>Angelernt</th><th>Zuletzt gesehen</th><th>IP</th><th></th></tr></thead>
+  <thead><tr><th>Name</th><th>Client-ID</th><th>Status</th><th>Angelernt</th><th>Zuletzt gesehen</th><th>IP</th><th>Version</th><th></th></tr></thead>
   <tbody>
   {% for c in clients %}
     <tr>
@@ -103,6 +128,9 @@
       <td class="muted small">{{ c.enrolled_at | localdt }}</td>
       <td class="muted small">{{ (c.last_seen | localdt) if c.last_seen else "—" }}</td>
       <td class="muted small">{{ c.last_ip or "—" }}</td>
+      <td class="small">{% if not c.agent_version %}<span class="muted" title="Agent meldet seine Version erst ab 1.1.10">≤ 1.1.9</span>
+        {% elif c.agent_version != version %}<span class="badge med" title="Server ist {{ version }} — Update-Befehl oben">{{ c.agent_version }} · Update</span>
+        {% else %}<span class="muted">{{ c.agent_version }}</span>{% endif %}</td>
       <td>
         {% if c.status.value != "approved" %}
         <form method="post" action="/agents/{{ c.id }}/approve" class="inline">{% include "_csrf.html" %}<button class="btn small" type="submit">Freigeben</button></form>

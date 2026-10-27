@@ -154,6 +154,7 @@ class Client(SQLModel, table=True):
     enrolled_at: datetime = Field(default_factory=utcnow)
     last_seen: datetime | None = None
     last_ip: str | None = None
+    agent_version: str | None = None  # reported by the agent on each push
     # Zero-knowledge credential crypto: the agent's X25519 public key (secrets
     # are sealed to it) and the passphrase that unlocks the agent's own private
     # key, delivered to the authenticated agent at runtime (split knowledge).

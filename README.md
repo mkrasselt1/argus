@@ -148,6 +148,11 @@ curl -fsSL https://argus.example/install.sh | sh
 iwr -useb https://argus.example/install.ps1 | iex; Update-ArgusAgent
 ```
 
+Alle Update-/Diagnose-Befehle stehen fertig zum Kopieren im Dashboard unter
+**Agenten → Agenten aktualisieren & prüfen**. Die Agenten-Liste zeigt je Agent die
+gemeldete **Version** und markiert veraltete mit „Update“ (Agenten melden ihre
+Version ab 1.1.10 beim Push mit).
+
 Ein erneutes Ausführen **mit** Join-Token meldet den Agenten neu an — das legt einen
 **neuen** Eintrag an, der ggf. erst freigegeben werden muss (bis dahin 403 auf
 `/ingest`).
