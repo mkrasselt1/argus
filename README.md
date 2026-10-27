@@ -332,8 +332,11 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 ```
 
 **Automatisch per CI**: [.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml)
-baut und pusht bei jedem Git-Tag `v*`. Repo-Secrets setzen: `DOCKERHUB_USERNAME`
-und `DOCKERHUB_TOKEN`. (GHCR-Variante ist im Workflow auskommentiert.)
+baut und pusht **nur** bei einem Git-Tag `v*` — ein Build je Release setzt
+`vX.Y.Z`, `vX.Y` und `latest` (amd64 + arm64). Pushes auf `main` ohne Tag bauen
+nicht, `latest` ist also immer ein echtes Release. Ein Release neu bauen: Actions →
+*Run workflow* → bei „Use workflow from“ den Tag wählen. Repo-Secrets setzen:
+`DOCKERHUB_USERNAME` und `DOCKERHUB_TOKEN`. (GHCR-Variante ist im Workflow auskommentiert.)
 
 ## Deployment in Plesk (Docker-Erweiterung)
 
