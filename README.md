@@ -191,6 +191,9 @@ Credentials; das System und seine Scans bleiben erhalten. *Sperren* blockiert nu
   - Ein Agent ist nach dem ersten Push fest an **sein** System gebunden; spätere
     Pushes landen immer dort, egal welchen Namen die `agent.json` mitschickt. Ein
     Umbenennen des Systems im Dashboard sperrt den Agenten daher nicht mehr aus.
+  - Systeme, die ein Agent pusht, scannt der Server **nicht** selbst (geplanter
+    Scan überspringt sie); „Scan“ im Dashboard schickt stattdessen einen
+    `rescan`-Befehl, den der Agent beim nächsten Herzschlag (≤ 15 min) ausführt.
 Der Server kann über die Poll-Antwort steuern (rescan, Intervall, Portliste,
 zu scannende **Subnetze/Hosts** (`targets`, zentral auf der System-Seite setzbar),
 Collector-Config) und meldet Agent-Updates. Die zentral gesetzte Config wird im

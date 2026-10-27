@@ -979,7 +979,9 @@ def unsnooze_update(system_id: int, component: str = Form(...),
 @app.post("/systems/{system_id}/scan")
 def trigger_scan(system_id: int, background: BackgroundTasks,
                  _: None = Depends(verify_csrf)):
-    background.add_task(scanner.run_scan, system_id)
+    # Push systems get a rescan command (delivered on the agent's next poll)
+    # instead of a server-side scan that can only fail.
+    background.add_task(scanner.request_scan, system_id)
     return RedirectResponse(f"/systems/{system_id}", status_code=303)
 
 

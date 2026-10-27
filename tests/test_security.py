@@ -305,3 +305,35 @@ def test_pending_windows_updates_count_as_updates():
         with Session(engine) as s:
             sid = s.exec(select(System).where(System.name == "WU-Host")).one().id
             assert s.get(SystemSummary, sid).updates == 1
+
+
+def test_push_systems_are_not_scanned_server_side():
+    """A system fed by an agent must not get server-side scans (which fail for
+    host-only collectors like windows); "scan now" queues a rescan instead."""
+    from sqlmodel import Session, select
+    from app.db import engine
+    from app.models import AgentCommand, Scan, System
+    from app.services import enrollment, scanner
+
+    with TestClient(app) as client:
+        code, _ = enrollment.create_code(auto_approve=True)
+        creds = client.post("/enroll", json={"code": code, "name": "Push"}).json()
+        headers = {"X-Client-Id": creds["client_id"], "X-Client-Token": creds["client_secret"]}
+        empty = {"packages": [], "vulnerabilities": [], "summary": {}}
+        assert client.post("/ingest", json={"system": "Push-Host", "collector": "windows",
+                                            "result": empty}, headers=headers).status_code == 200
+        with Session(engine) as s:
+            system = s.exec(select(System).where(System.name == "Push-Host")).one()
+            system.collector_config = {}  # e.g. created by hand: binding alone counts
+            s.add(system)
+            s.commit()
+            sid = system.id
+
+        scanner.run_all_enabled()
+        assert scanner.request_scan(sid) is True
+        assert scanner.request_scan(sid) is True  # no duplicate command
+        with Session(engine) as s:
+            scans = s.exec(select(Scan).where(Scan.system_id == sid)).all()
+            assert len(scans) == 1  # only the pushed one, no server-side error scan
+            cmds = s.exec(select(AgentCommand).where(AgentCommand.system_id == sid)).all()
+            assert [c.type for c in cmds] == ["rescan"]

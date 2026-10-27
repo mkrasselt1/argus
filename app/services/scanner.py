@@ -118,6 +118,46 @@ def _record_changes(session: Session, system_id: int, scan: Scan, result: Collec
     return count
 
 
+def is_push_system(session: Session, system: System) -> bool:
+    """Is this system fed by a push agent (so the server must not scan it)?
+
+    True when it was auto-registered by a push or an enrolled agent is bound to
+    it. Such systems often use a collector that only runs on the host itself
+    (e.g. windows), so a server-side scan can only fail.
+    """
+    from app.models import Client
+
+    if (system.collector_config or {}).get("mode") == "push":
+        return True
+    return session.exec(select(Client).where(Client.system_id == system.id)).first() is not None
+
+
+def request_scan(system_id: int) -> bool:
+    """Scan now: queue a rescan for push systems, else scan server-side.
+
+    Returns True if a rescan command was queued (delivered on the agent's next
+    push) instead of scanning here.
+    """
+    with Session(engine) as session:
+        system = session.get(System, system_id)
+        if system is None:
+            raise ValueError(f"System {system_id} not found")
+        if not is_push_system(session, system):
+            push = False
+        else:
+            push = True
+            already = session.exec(select(AgentCommand).where(
+                AgentCommand.system_id == system_id,
+                AgentCommand.type == "rescan",
+                AgentCommand.status == CommandStatus.pending)).first()
+    if not push:
+        run_scan(system_id)
+        return False
+    if already is None:
+        enqueue_command(system_id, "rescan")
+    return True
+
+
 def run_scan(system_id: int) -> Scan:
     """Execute the system's collector and store a new Scan with its findings."""
     with Session(engine) as session:
@@ -536,7 +576,8 @@ def run_all_enabled() -> list[int]:
     """Scan every enabled system (used by the scheduler). Returns scan ids."""
     with Session(engine) as session:
         systems = session.exec(select(System).where(System.enabled == True)).all()  # noqa: E712
-        ids = [s.id for s in systems if s.id is not None]
+        # Push systems report on their own schedule; scanning them here fails.
+        ids = [s.id for s in systems if s.id is not None and not is_push_system(session, s)]
     scan_ids: list[int] = []
     for sid in ids:
         try:
