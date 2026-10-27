@@ -469,8 +469,25 @@ def _install_ps1(server: str) -> str:
 #   iwr -useb {server}/install.ps1 | iex ; Install-ArgusAgent -Join '<token>'
 # Update an enrolled agent (keeps its enrollment, no new agent entry):
 #   iwr -useb {server}/install.ps1 | iex ; Update-ArgusAgent
+function Find-ArgusPython {{
+  # Don't rely on PATH alone (a window opened before an install keeps a stale
+  # PATH): PATH python (not the Store alias), the py launcher, then a standard
+  # all-users install (newest first).
+  $c = Get-Command python -ErrorAction SilentlyContinue | Where-Object {{ $_.Source -notmatch "WindowsApps" }} | Select-Object -First 1
+  if ($c) {{ return $c.Source }}
+  if (Get-Command py -ErrorAction SilentlyContinue) {{
+    $exe = (& py -3 -c "import sys;print(sys.executable)" 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $exe) {{ return $exe.Trim() }}
+  }}
+  $c = Get-ChildItem "$env:ProgramFiles\\Python3*\\python.exe" -ErrorAction SilentlyContinue |
+       Sort-Object {{ [int]($_.Directory.Name -replace '\\D','') }} -Descending | Select-Object -First 1
+  if ($c) {{ return $c.FullName }}
+  return $null
+}}
+
 function Install-ArgusAgent {{
-  param([string]$Join="", [string]$Extra="")
+  # -Python <path\\python.exe> picks the interpreter and rebuilds the venv with it.
+  param([string]$Join="", [string]$Extra="", [string]$Python="")
   $Server = "{server}"
   $Dir = "$env:ProgramData\\argus-agent"
   $Exe = "$Dir\\venv\\Scripts\\argus-agent.exe"
@@ -478,19 +495,34 @@ function Install-ArgusAgent {{
   # create a new, not yet approved agent entry on the server.
   if (-not $Join -and -not (Test-Path "$Dir\\agent.json")) {{ throw "-Join <token> required (no existing enrollment in $Dir)" }}
   Write-Host "Installing Argus agent into $Dir ..."
-  # The task runs as SYSTEM. A Microsoft-Store Python (WindowsApps alias) is
-  # per-user and cannot be executed by SYSTEM -> refuse it up front.
-  $base = (& python -c "import sys;print(sys.base_prefix)" 2>$null)
-  if ($LASTEXITCODE -ne 0 -or -not $base) {{ throw "python not found in PATH - install Python (python.org, 'for all users')" }}
-  if ($base -match "WindowsApps") {{ throw "Microsoft-Store Python ($base) is not usable by SYSTEM - install Python from python.org 'for all users'" }}
-  if ($base -match "\\\\Users\\\\") {{ Write-Warning "Python is installed per-user ($base); prefer an 'all users' install so SYSTEM always finds it." }}
+  $VPy = "$Dir\\venv\\Scripts\\python.exe"
+  # Update: reuse a working venv - it carries its own interpreter, so no system
+  # python on PATH is needed. A venv whose base python is gone is rebuilt.
+  $reuse = $false
+  if (-not $Python -and (Test-Path $VPy)) {{
+    & $VPy -c "import sys" 2>$null
+    $reuse = ($LASTEXITCODE -eq 0)
+  }}
+  if (-not $reuse) {{
+    if (-not $Python) {{ $Python = Find-ArgusPython }}
+    if (-not $Python) {{ throw "No Python found - install Python from python.org ('Install for all users')" }}
+    # The task runs as SYSTEM. A Microsoft-Store Python (WindowsApps alias) is
+    # per-user and cannot be executed by SYSTEM -> refuse it up front.
+    $base = (& $Python -c "import sys;print(sys.base_prefix)" 2>$null)
+    if ($LASTEXITCODE -ne 0 -or -not $base) {{ throw "Python '$Python' does not run" }}
+    if ($base -match "WindowsApps") {{ throw "Microsoft-Store Python ($base) is not usable by SYSTEM - install Python from python.org 'for all users'" }}
+    if ($base -match "\\\\Users\\\\") {{ Write-Warning "Python is installed per-user ($base); prefer an 'all users' install so SYSTEM always finds it." }}
+    Write-Host "Using Python $base"
+  }}
   # Stop + disable an existing task while the venv is rebuilt: otherwise the
   # heartbeat can fire mid-reinstall and fail with 0x80070002 (exe missing),
   # and pip cannot replace a locked exe.
   Stop-ScheduledTask -TaskName "ArgusAgent" -ErrorAction SilentlyContinue
   Disable-ScheduledTask -TaskName "ArgusAgent" -ErrorAction SilentlyContinue | Out-Null
-  python -m venv "$Dir\\venv"
-  if ($LASTEXITCODE -ne 0) {{ throw "venv creation failed" }}
+  if (-not $reuse) {{
+    & $Python -m venv --clear "$Dir\\venv"
+    if ($LASTEXITCODE -ne 0) {{ throw "venv creation failed" }}
+  }}
   & "$Dir\\venv\\Scripts\\python.exe" -m pip install -q --upgrade pip 2>$null
   & "$Dir\\venv\\Scripts\\python.exe" -m pip install -q --upgrade "$Server/dist/argus-agent.tar.gz"
   if ($LASTEXITCODE -ne 0) {{ throw "pip install of $Server/dist/argus-agent.tar.gz failed (TLS/self-signed cert? try: -m pip install --trusted-host <host> ...)" }}
@@ -536,7 +568,9 @@ function Install-ArgusAgent {{
 
 function Update-ArgusAgent {{
   # Upgrade agent + task from this server, keeping the enrollment.
-  Install-ArgusAgent
+  # -Python <path\\python.exe> rebuilds the venv with that interpreter.
+  param([string]$Python="")
+  Install-ArgusAgent -Python $Python
 }}
 
 function Test-ArgusAgent {{

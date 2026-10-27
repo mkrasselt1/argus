@@ -153,6 +153,11 @@ Alle Update-/Diagnose-Befehle stehen fertig zum Kopieren im Dashboard unter
 gemeldete **Version** und markiert veraltete mit „Update“ (Agenten melden ihre
 Version ab 1.1.10 beim Push mit).
 
+`Update-ArgusAgent` nutzt das vorhandene venv (braucht also kein Python im PATH).
+Nur ein Neu-Aufbau sucht ein System-Python: PATH → `py`-Launcher →
+`C:\Program Files\Python3*`. Gezielt wählen bzw. venv mit anderem Python neu bauen:
+`Update-ArgusAgent -Python "C:\Program Files\Python314\python.exe"`.
+
 Ein erneutes Ausführen **mit** Join-Token meldet den Agenten neu an — das legt einen
 **neuen** Eintrag an, der ggf. erst freigegeben werden muss (bis dahin 403 auf
 `/ingest`).
