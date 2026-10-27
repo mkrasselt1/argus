@@ -422,13 +422,21 @@ while [ $# -gt 0 ]; do
     *) EXTRA="$EXTRA $1"; shift ;;
   esac
 done
-[ -z "$JOIN" ] && {{ echo "error: --join <token> required"; exit 1; }}
+# Without --join an existing enrollment is kept (update mode): re-joining would
+# create a new, not yet approved agent entry on the server.
+if [ -z "$JOIN" ] && [ ! -f "$DIR/agent.json" ]; then
+  echo "error: --join <token> required (no existing enrollment in $DIR)"; exit 1
+fi
 echo "Installing Argus agent into $DIR ..."
 python3 -m venv "$DIR/venv"
 "$DIR/venv/bin/python" -m pip install -q --upgrade pip || true
-"$DIR/venv/bin/pip" install -q "$SERVER/dist/argus-agent.tar.gz"
+"$DIR/venv/bin/pip" install -q --upgrade "$SERVER/dist/argus-agent.tar.gz"
 export ARGUS_AGENT_CONFIG="$DIR/agent.json"
-"$DIR/venv/bin/argus-agent" join "$JOIN" $EXTRA --interval 60
+if [ -n "$JOIN" ]; then
+  "$DIR/venv/bin/argus-agent" join "$JOIN" $EXTRA --interval 60
+else
+  echo "Existing enrollment kept (update only)."
+fi
 if [ "$(id -u)" = "0" ] && command -v systemctl >/dev/null 2>&1; then
   cat > /etc/systemd/system/argus-agent.service <<UNIT
 [Unit]
@@ -441,8 +449,8 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 UNIT
-  systemctl daemon-reload && systemctl enable --now argus-agent
-  echo "Service 'argus-agent' installed and started."
+  systemctl daemon-reload && systemctl enable argus-agent && systemctl restart argus-agent
+  echo "Service 'argus-agent' installed and (re)started."
 else
   echo "Run the agent with: ARGUS_AGENT_CONFIG=$DIR/agent.json $DIR/venv/bin/argus-agent run"
 fi
@@ -452,11 +460,16 @@ fi
 def _install_ps1(server: str) -> str:
     return f"""# Argus agent installer (Windows). Usage:
 #   iwr -useb {server}/install.ps1 | iex ; Install-ArgusAgent -Join '<token>'
+# Update an enrolled agent (keeps its enrollment, no new agent entry):
+#   iwr -useb {server}/install.ps1 | iex ; Update-ArgusAgent
 function Install-ArgusAgent {{
-  param([Parameter(Mandatory=$true)][string]$Join, [string]$Extra="")
+  param([string]$Join="", [string]$Extra="")
   $Server = "{server}"
   $Dir = "$env:ProgramData\\argus-agent"
   $Exe = "$Dir\\venv\\Scripts\\argus-agent.exe"
+  # Without -Join an existing enrollment is kept (update mode): re-joining would
+  # create a new, not yet approved agent entry on the server.
+  if (-not $Join -and -not (Test-Path "$Dir\\agent.json")) {{ throw "-Join <token> required (no existing enrollment in $Dir)" }}
   Write-Host "Installing Argus agent into $Dir ..."
   # The task runs as SYSTEM. A Microsoft-Store Python (WindowsApps alias) is
   # per-user and cannot be executed by SYSTEM -> refuse it up front.
@@ -476,8 +489,12 @@ function Install-ArgusAgent {{
   if ($LASTEXITCODE -ne 0) {{ throw "pip install of $Server/dist/argus-agent.tar.gz failed (TLS/self-signed cert? try: -m pip install --trusted-host <host> ...)" }}
   if (-not (Test-Path $Exe)) {{ throw "$Exe missing after install - not registering the task" }}
   $env:ARGUS_AGENT_CONFIG = "$Dir\\agent.json"
-  & $Exe join $Join --kind windows --collector windows --interval 60
-  if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$Dir\\agent.json")) {{ throw "join failed - not registering the task" }}
+  if ($Join) {{
+    & $Exe join $Join --kind windows --collector windows --interval 60
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$Dir\\agent.json")) {{ throw "join failed - not registering the task" }}
+  }} else {{
+    Write-Host "Existing enrollment kept (update only)."
+  }}
   # Heartbeat model: the scheduler just fires often; the agent decides whether
   # its own interval has elapsed (`run --once` is a no-op when not yet due).
   # So the cadence lives in the (centrally settable) agent config, and the task
@@ -508,6 +525,11 @@ function Install-ArgusAgent {{
     Write-Warning ("First task run returned 0x{{0:X}} - see $Dir\\agent.log" -f $res)
     if (Test-Path "$Dir\\agent.log") {{ Get-Content "$Dir\\agent.log" -Tail 20 }}
   }}
+}}
+
+function Update-ArgusAgent {{
+  # Upgrade agent + task from this server, keeping the enrollment.
+  Install-ArgusAgent
 }}
 
 function Test-ArgusAgent {{
@@ -659,6 +681,12 @@ def approve_client(client_id: int, _: None = Depends(verify_csrf)):
 @app.post("/agents/{client_id}/revoke")
 def revoke_client(client_id: int, _: None = Depends(verify_csrf)):
     enrollment.set_status(client_id, ClientStatus.revoked)
+    return RedirectResponse("/agents", status_code=303)
+
+
+@app.post("/agents/{client_id}/delete")
+def delete_client(client_id: int, _: None = Depends(verify_csrf)):
+    enrollment.delete_client(client_id)
     return RedirectResponse("/agents", status_code=303)
 
 

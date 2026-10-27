@@ -138,6 +138,24 @@ iwr -useb https://argus.example/install.ps1 | iex; Install-ArgusAgent -Join '<jo
 Der Installer holt den Agenten als pip-Paket vom Server (`/dist/argus-agent.tar.gz`,
 immer passend zur Server-Version), meldet ihn an und registriert einen Dienst.
 
+**Agent aktualisieren** (Anmeldung bleibt erhalten, kein neuer Agenten-Eintrag) —
+nach jedem Server-Update, wenn der Agent „Agent-Update verfügbar“ loggt:
+
+```bash
+# Linux: Installer ohne --join (pip-Upgrade + Dienst-Neustart)
+curl -fsSL https://argus.example/install.sh | sh
+# Windows (als Admin):
+iwr -useb https://argus.example/install.ps1 | iex; Update-ArgusAgent
+```
+
+Ein erneutes Ausführen **mit** Join-Token meldet den Agenten neu an — das legt einen
+**neuen** Eintrag an, der ggf. erst freigegeben werden muss (bis dahin 403 auf
+`/ingest`).
+
+**Agenten löschen:** Dashboard → Agenten → *Löschen*. Entfernt den Agenten-Eintrag
+(seine Zugangsdaten werden ungültig) und die an seinen Schlüssel versiegelten
+Credentials; das System und seine Scans bleiben erhalten. *Sperren* blockiert nur.
+
 **Scheduling (selbstheilend):**
 - **Linux (systemd):** Dauer-Loop `argus-agent run` mit `Restart=always` — stirbt
   der Prozess, startet systemd ihn neu.

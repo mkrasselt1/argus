@@ -110,6 +110,8 @@
         {% if c.status.value != "revoked" %}
         <form method="post" action="/agents/{{ c.id }}/revoke" class="inline">{% include "_csrf.html" %}<button class="btn small" type="submit" style="background:var(--high)">Sperren</button></form>
         {% endif %}
+        <form method="post" action="/agents/{{ c.id }}/delete" class="inline"
+              onsubmit="return confirm('Agent „{{ c.name }}“ endgültig löschen? Seine Zugangsdaten werden ungültig, an ihn versiegelte Credentials entfernt. System und Scans bleiben erhalten.');">{% include "_csrf.html" %}<button class="btn small" type="submit" style="background:var(--critical, var(--high))">Löschen</button></form>
       </td>
     </tr>
   {% endfor %}

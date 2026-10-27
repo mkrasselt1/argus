@@ -17,7 +17,7 @@ from datetime import timedelta
 from sqlmodel import Session, select
 
 from app.db import engine
-from app.models import Client, ClientStatus, EnrollmentCode, utcnow
+from app.models import Client, ClientStatus, Credential, EnrollmentCode, utcnow
 
 
 def _hash(value: str) -> str:
@@ -129,6 +129,20 @@ def set_status(client_id: int, status: ClientStatus) -> None:
             client.status = status
             session.add(client)
             session.commit()
+
+
+def delete_client(client_id: int) -> bool:
+    """Remove an agent for good. Credentials sealed to its key are useless
+    without it, so they go too; the system and its scans stay."""
+    with Session(engine) as session:
+        client = session.get(Client, client_id)
+        if client is None:
+            return False
+        for cred in session.exec(select(Credential).where(Credential.client_id == client_id)).all():
+            session.delete(cred)
+        session.delete(client)
+        session.commit()
+        return True
 
 
 def rotate_secret(client_id: int) -> str | None:
