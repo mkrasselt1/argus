@@ -33,7 +33,9 @@
       </select>
       <button class="btn small" type="submit">Intervall setzen</button>
     </form>
-    {% if system.collector == "network_discovery" %}
+    {# Any on-site agent can sweep its LAN: a host agent (e.g. windows) runs the
+       network scan in addition once targets are set. #}
+    {% if system.collector == "network_discovery" or is_push %}
     <form method="post" action="/systems/{{ system.id }}/command" class="inline" title="Portliste für den Scan vom Server vorgeben">
       {% include "_csrf.html" %}
       <input type="hidden" name="cmd_type" value="set_config">

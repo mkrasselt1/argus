@@ -198,6 +198,13 @@ Credentials; das System und seine Scans bleiben erhalten. *Sperren* blockiert nu
   - Den Task im Aufgabenplaner manuell starten pusht nur, wenn das Intervall um ist.
     **Sofort pushen:** `argus-agent.exe run --once --force --config <agent.json>`
     (fertig zum Kopieren im Dashboard unter Agenten).
+**Netzwerk-Scan vor Ort:** Jeder Agent kann zusätzlich sein lokales Netz scannen.
+Sobald auf der System-Seite **Subnetze** gesetzt sind (z. B. `192.168.178.0/24`),
+führt auch ein Host-Agent (z. B. `windows`) nach seinem Inventar den
+`network_discovery`-Sweep aus und schickt beides in **einem** Push; gefundene
+Geräte erscheinen wie gewohnt. Ein fehlschlagender Sweep kostet das Host-Inventar
+nicht (Status in der Scan-Zusammenfassung unter `net_scan`).
+
 Der Server kann über die Poll-Antwort steuern (rescan, Intervall, Portliste,
 zu scannende **Subnetze/Hosts** (`targets`, zentral auf der System-Seite setzbar),
 Collector-Config) und meldet Agent-Updates. Die zentral gesetzte Config wird im

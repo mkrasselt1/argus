@@ -365,3 +365,61 @@ def test_agent_poll_reports_pending_rescan():
                                          "result": empty}, headers=headers)
         assert [c["type"] for c in r.json()["commands"]] == ["rescan"]
         assert client.post("/agent/poll", headers=headers).json()["rescan"] is False
+
+
+def test_host_agent_adds_network_scan_when_targets_set(monkeypatch):
+    """A host agent (e.g. windows) also sweeps its LAN once targets are set;
+    a failing sweep never costs the host inventory."""
+    from app import agent
+    from app.collectors.base import CollectResult, PackageResult
+
+    def host():
+        return CollectResult(packages=[PackageResult(name="7-Zip", version="26.05")],
+                             summary={"installed_programs": 1})
+
+    net = CollectResult(packages=[PackageResult(name="192.168.178.20", version="",
+                                                type="iot-device")],
+                        summary={"hosts_up": 1})
+    calls = []
+
+    def fake_run(name, config):
+        calls.append(name)
+        return net
+
+    monkeypatch.setattr(agent, "run_collector", fake_run)
+
+    r = host()
+    agent._add_network_scan("windows", {}, r)  # no targets -> no sweep
+    assert calls == [] and len(r.packages) == 1
+
+    agent._add_network_scan("windows", {"targets": ["192.168.178.0/24"]}, r)
+    assert calls == ["network_discovery"]
+    assert [p.type for p in r.packages] == [None, "iot-device"]
+    assert r.summary["net_hosts_up"] == 1 and r.summary["net_scan"] == "ok"
+
+    def boom(name, config):
+        raise OSError("no route")
+
+    monkeypatch.setattr(agent, "run_collector", boom)
+    r = host()
+    agent._add_network_scan("windows", {"targets": ["10.0.0.0/24"]}, r)
+    assert len(r.packages) == 1 and r.summary["net_scan"].startswith("error")
+
+
+def test_subnet_form_shown_for_push_host_systems():
+    from sqlmodel import Session, select
+    from app.db import engine
+    from app.models import System
+    from app.services import enrollment
+
+    with TestClient(app) as client:
+        code, _ = enrollment.create_code(auto_approve=True)
+        creds = client.post("/enroll", json={"code": code, "name": "Win"}).json()
+        headers = {"X-Client-Id": creds["client_id"], "X-Client-Token": creds["client_secret"]}
+        empty = {"packages": [], "vulnerabilities": [], "summary": {}}
+        client.post("/ingest", json={"system": "Win-Host", "collector": "windows",
+                                     "result": empty}, headers=headers)
+        with Session(engine) as s:
+            sid = s.exec(select(System).where(System.name == "Win-Host")).one().id
+        page = client.get(f"/systems/{sid}", headers={"accept": "text/html"}).text
+        assert "Subnetze setzen" in page

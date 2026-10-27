@@ -245,12 +245,37 @@ def _open_credentials(cfg: dict, data: dict) -> dict:
     return out
 
 
+def _add_network_scan(collector: str, scan_config: dict, result) -> None:
+    """Also sweep the local network when the server set scan `targets`.
+
+    The agent sits inside the customer LAN, so a host agent (e.g. windows)
+    doubles as that network's scanner: its discovered devices travel in the
+    same push and the server materialises them as usual. A failing sweep never
+    costs the host inventory — it is only noted in the summary.
+    """
+    if collector == "network_discovery" or not scan_config.get("targets"):
+        return
+    try:
+        net = run_collector("network_discovery", scan_config)
+    except Exception as exc:
+        log.warning("Netzwerk-Scan fehlgeschlagen: %s", exc)
+        result.summary["net_scan"] = f"error: {exc}"
+        return
+    result.packages.extend(net.packages)
+    result.vulnerabilities.extend(net.vulnerabilities)
+    for key, value in (net.summary or {}).items():
+        result.summary[f"net_{key}"] = value
+    result.summary["net_scan"] = "ok"
+    log.info("Netzwerk-Scan: %d Einträge", len(net.packages))
+
+
 def _push_once(cfg: dict, ram_creds: dict | None = None) -> dict:
     # Inject server-delivered credentials (RAM only) into the collector config.
     scan_config = dict(cfg.get("config") or {})
     if ram_creds:
         scan_config["module_credentials"] = ram_creds
     result = run_collector(cfg["collector"], scan_config)
+    _add_network_scan(cfg["collector"], scan_config, result)
     payload = {
         "system": cfg["name"],
         "collector": cfg["collector"],

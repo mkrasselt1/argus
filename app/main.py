@@ -832,6 +832,7 @@ def system_detail(system_id: int, request: Request, session: Session = Depends(g
             "snoozes": snoozes,
             "pending_commands": pending_commands,
             "current_targets": _targets_str(system),
+            "is_push": scanner.is_push_system(session, system),
             "severity": _severity_counts(session, last.id) if last else {},
         },
     )

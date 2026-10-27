@@ -1,6 +1,6 @@
 """Argus — read-only security & asset management dashboard."""
 
-__version__ = "1.1.14"
+__version__ = "1.1.15"
 
 # Database schema revision. Bump whenever models.py changes in a way that
 # needs a migration. The running app records this in the `schema_meta` table
