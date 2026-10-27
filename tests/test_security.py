@@ -282,3 +282,26 @@ def test_allowed_agent_collectors_default():
     s = Settings()
     assert s.allowed_agent_collectors() == {"docker", "ssh_linux", "network_discovery", "manual"}
     assert "relay" not in s.allowed_agent_collectors()
+
+
+def test_pending_windows_updates_count_as_updates():
+    """Windows Updates have no version pair ("ausstehend" both sides) but must
+    still count in the dashboard's update column."""
+    from sqlmodel import Session, select
+    from app.db import engine
+    from app.models import System, SystemSummary
+    from app.services import enrollment
+
+    with TestClient(app) as client:
+        code, _ = enrollment.create_code(auto_approve=True)
+        creds = client.post("/enroll", json={"code": code, "name": "WU"}).json()
+        headers = {"X-Client-Id": creds["client_id"], "X-Client-Token": creds["client_secret"]}
+        wu = {"name": "2026-10 Cumulative Update", "version": "ausstehend",
+              "latest_version": "ausstehend", "type": "windows-update"}
+        result = {"packages": [wu], "vulnerabilities": [], "summary": {}}
+        r = client.post("/ingest", json={"system": "WU-Host", "collector": "manual",
+                                         "result": result}, headers=headers)
+        assert r.status_code == 200
+        with Session(engine) as s:
+            sid = s.exec(select(System).where(System.name == "WU-Host")).one().id
+            assert s.get(SystemSummary, sid).updates == 1

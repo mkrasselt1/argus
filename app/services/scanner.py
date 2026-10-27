@@ -402,9 +402,13 @@ def recompute_summary(session: Session, system_id: int) -> None:
         summary.last_scan_at = last.started_at
         summary.status = last.status.value
         summary.packages = len(pkgs)
+        # Pending Windows Updates carry no version pair ("ausstehend" both
+        # sides) — they are updates by type, as on the system page.
         summary.updates = sum(
             1 for p in pkgs
-            if p.latest_version and p.latest_version != p.version and p.name not in snoozed
+            if ((p.latest_version and p.latest_version != p.version)
+                or p.type == "windows-update")
+            and p.name not in snoozed
         )
         summary.critical = sum(1 for v in vulns if v.severity == Severity.critical)
         summary.high = sum(1 for v in vulns if v.severity == Severity.high)
