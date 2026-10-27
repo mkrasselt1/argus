@@ -267,8 +267,8 @@ def _push_once(cfg: dict, ram_creds: dict | None = None) -> dict:
         resp = c.post(f"{cfg['server']}/ingest", json=payload, headers=headers)
     if resp.status_code == 403:
         # e.g. "client pending" / "client revoked" — say so instead of a bare 403.
-        log.error("Server lehnt Agent ab (%s) — im Dashboard unter Agenten freigeben?",
-                  resp.text[:200])
+        # ASCII only: PowerShell 5.1's Get-Content shows UTF-8 dashes as mojibake.
+        log.error("Server lehnt Agent ab (403): %s", resp.text[:300])
     resp.raise_for_status()
     return resp.json()
 

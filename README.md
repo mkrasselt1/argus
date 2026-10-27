@@ -183,6 +183,9 @@ Credentials; das System und seine Scans bleiben erhalten. *Sperren* blockiert nu
     Anmeldung nicht). Python am besten „für alle Benutzer“ installieren.
   - **403 auf `/ingest`** = Agent nicht freigegeben/gesperrt (Dashboard → Agenten);
     der Agent loggt den Grund.
+  - Ein Agent ist nach dem ersten Push fest an **sein** System gebunden; spätere
+    Pushes landen immer dort, egal welchen Namen die `agent.json` mitschickt. Ein
+    Umbenennen des Systems im Dashboard sperrt den Agenten daher nicht mehr aus.
 Der Server kann über die Poll-Antwort steuern (rescan, Intervall, Portliste,
 zu scannende **Subnetze/Hosts** (`targets`, zentral auf der System-Seite setzbar),
 Collector-Config) und meldet Agent-Updates. Die zentral gesetzte Config wird im

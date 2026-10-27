@@ -39,11 +39,12 @@ def test_agent_bound_to_one_system():
                          headers=headers)
         assert r1.status_code == 200 and r1.json()["ok"]
 
-        # pushing a different system is rejected (403) — no auto-register of others
+        # pushing under a different name still lands on the bound system —
+        # no write to / auto-register of other systems
         r2 = client.post("/ingest",
                          json={"system": "Beta", "collector": "manual", "result": empty},
                          headers=headers)
-        assert r2.status_code == 403
+        assert r2.status_code == 200
 
         # pushing its own system again still works
         r3 = client.post("/ingest",
@@ -54,6 +55,22 @@ def test_agent_bound_to_one_system():
         # the other system was never created
         names = {s["name"] for s in client.get("/api/systems").json()}
         assert "Alpha" in names and "Beta" not in names
+
+        # renaming the system in the dashboard must not lock the agent out
+        from sqlmodel import Session, select
+        from app.db import engine
+        from app.models import System
+        with Session(engine) as s:
+            alpha = s.exec(select(System).where(System.name == "Alpha")).one()
+            alpha.name = "Alpha renamed"
+            s.add(alpha)
+            s.commit()
+        r4 = client.post("/ingest",
+                         json={"system": "Alpha", "collector": "manual", "result": empty},
+                         headers=headers)
+        assert r4.status_code == 200
+        names = {s["name"] for s in client.get("/api/systems").json()}
+        assert "Alpha renamed" in names and "Alpha" not in names
 
 
 # ---- H1/M3: CSRF ----------------------------------------------------------

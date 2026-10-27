@@ -187,25 +187,28 @@ def ingest_result(
 
     When ``client_db_id`` is given (a per-client authenticated agent), the agent
     is bound to exactly one system: on its first push the matched/created system
-    is recorded on the Client, and every later push must target that same system
-    (otherwise a PermissionError is raised). This stops an authenticated agent
-    from writing to — or auto-registering — systems that are not its own.
+    is recorded on the Client, and every later push goes to that bound system —
+    whatever name the agent sends. The name in the agent's config is only a
+    label; renaming the system in the dashboard must not lock the agent out.
+    This also stops an authenticated agent from writing to — or
+    auto-registering — systems that are not its own.
     """
     from app.models import Client
 
     with Session(engine) as session:
-        system = session.exec(select(System).where(System.name == system_name)).first()
-
+        system = None
         # ---- agent <-> system binding (per-client agents only) ------------
         client_row = session.get(Client, client_db_id) if client_db_id is not None else None
         if client_row is not None and client_row.system_id is not None:
-            # Already bound: the push must resolve to the bound system.
-            if system is None or system.id != client_row.system_id:
-                bound = session.get(System, client_row.system_id)
-                raise PermissionError(
-                    f"agent is bound to system '{bound.name if bound else client_row.system_id}' "
-                    f"and may not write to '{system_name}'"
-                )
+            system = session.get(System, client_row.system_id)
+            if system is None:
+                # Bound system was deleted: unbind, the push re-binds below.
+                client_row.system_id = None
+            elif system.name != system_name:
+                log.info("agent %s pushes as '%s', stored on its bound system '%s'",
+                         client_row.client_id, system_name, system.name)
+        if system is None:
+            system = session.exec(select(System).where(System.name == system_name)).first()
 
         if system is None:
             if not auto_register:
