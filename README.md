@@ -193,7 +193,11 @@ Credentials; das System und seine Scans bleiben erhalten. *Sperren* blockiert nu
     Umbenennen des Systems im Dashboard sperrt den Agenten daher nicht mehr aus.
   - Systeme, die ein Agent pusht, scannt der Server **nicht** selbst (geplanter
     Scan überspringt sie); „Scan“ im Dashboard schickt stattdessen einen
-    `rescan`-Befehl, den der Agent beim nächsten Herzschlag (≤ 15 min) ausführt.
+    `rescan`-Befehl, den der Agent beim nächsten Herzschlag (≤ 15 min) ausführt
+    (nicht fällige Herzschläge fragen dafür kurz `POST /agent/poll`).
+  - Den Task im Aufgabenplaner manuell starten pusht nur, wenn das Intervall um ist.
+    **Sofort pushen:** `argus-agent.exe run --once --force --config <agent.json>`
+    (fertig zum Kopieren im Dashboard unter Agenten).
 Der Server kann über die Poll-Antwort steuern (rescan, Intervall, Portliste,
 zu scannende **Subnetze/Hosts** (`targets`, zentral auf der System-Seite setzbar),
 Collector-Config) und meldet Agent-Updates. Die zentral gesetzte Config wird im

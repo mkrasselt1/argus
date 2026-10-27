@@ -598,6 +598,32 @@ def agents_page(request: Request, session: Session = Depends(get_session)):
     )
 
 
+@app.post("/agent/poll")
+def agent_poll(request: Request, x_client_id: str = Header(default=""),
+               x_client_token: str = Header(default="")) -> dict:
+    """Cheap heartbeat check for --once agents that are not yet due to push.
+
+    Tells the agent whether a rescan is pending, so "Scan" in the dashboard
+    takes effect on the next heartbeat instead of the next due push. Commands
+    are still delivered (and marked done) by the push itself.
+    """
+    try:
+        client = (enrollment.authenticate(x_client_id, x_client_token, _client_ip(request))
+                  if x_client_id else None)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=f"client {exc}")
+    if client is None:
+        raise HTTPException(status_code=401, detail="invalid client credentials")
+    rescan = False
+    if client.system_id is not None:
+        with Session(engine) as session:
+            rescan = session.exec(select(AgentCommand).where(
+                AgentCommand.system_id == client.system_id,
+                AgentCommand.type == "rescan",
+                AgentCommand.status == CommandStatus.pending)).first() is not None
+    return {"rescan": rescan, "server_version": __version__}
+
+
 def _require_client(
     x_client_id: str = Header(default=""), x_client_token: str = Header(default=""),
 ):

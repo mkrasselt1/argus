@@ -316,6 +316,23 @@ def _push_due(cfg: dict) -> bool:
     return (time.time() - last) >= (interval * 60 - HEARTBEAT_SLACK_S)
 
 
+def _rescan_requested(cfg: dict) -> bool:
+    """Ask the server (cheaply) whether a rescan is pending for us.
+
+    Best effort: any failure — including an older server without /agent/poll —
+    just means "no", and the agent waits for its next due push as before.
+    """
+    headers = {"X-Client-Id": cfg["client_id"], "X-Client-Token": cfg["client_secret"]}
+    try:
+        with _make_client(cfg["server"], cfg.get("fingerprint"), cfg.get("insecure", False),
+                          timeout=20) as c:
+            resp = c.post(f"{cfg['server']}/agent/poll", headers=headers)
+        return resp.status_code == 200 and bool(resp.json().get("rescan"))
+    except Exception as exc:
+        log.debug("poll fehlgeschlagen: %s", exc)
+        return False
+
+
 def cmd_run(args) -> int:
     global CONFIG_PATH
     # Explicit --config wins over the env var / default. The scheduled task runs
@@ -335,11 +352,15 @@ def cmd_run(args) -> int:
         return 2
 
     once = bool(getattr(args, "once", False))
-    if once and not _push_due(cfg):
-        age = int(time.time() - float(cfg.get("last_push_ts") or 0))
-        log.info("noch nicht fällig (Intervall %s min, letzter Push vor %ss) — nichts zu tun",
-                 cfg.get("interval"), age)
-        return 0
+    force = bool(getattr(args, "force", False))
+    if once and not force and not _push_due(cfg):
+        if _rescan_requested(cfg):
+            log.info("Rescan vom Server angefordert - pushe jetzt")
+        else:
+            age = int(time.time() - float(cfg.get("last_push_ts") or 0))
+            log.info("noch nicht faellig (Intervall %s min, letzter Push vor %ss) - nichts zu tun",
+                     cfg.get("interval"), age)
+            return 0
 
     ram_creds: dict = {}  # server-delivered credentials, kept in memory only
     rc = 0
@@ -395,6 +416,8 @@ def main() -> None:
     r = sub.add_parser("run", help="Push-Schleife starten")
     r.add_argument("--once", action="store_true",
                    help="einmal pushen und beenden (OS-Scheduler treibt den Takt)")
+    r.add_argument("--force", action="store_true",
+                   help="mit --once: sofort pushen, auch wenn das Intervall noch nicht abgelaufen ist")
     r.add_argument("--config", default=None,
                    help="Pfad zur agent.json (sonst ARGUS_AGENT_CONFIG / ~/.argus/agent.json)")
     r.set_defaults(func=cmd_run)

@@ -47,14 +47,16 @@
   {{ cmd("iwr -useb " ~ base_url ~ "install.ps1 | iex; Update-ArgusAgent") }}
   <p class="muted small" style="margin:.2rem 0">Diagnose (Task, letztes Ergebnis, Log)</p>
   {{ cmd("iwr -useb " ~ base_url ~ "install.ps1 | iex; Test-ArgusAgent") }}
-  <p class="muted small" style="margin:.2rem 0">Sofort pushen / Log ansehen</p>
-  {{ cmd("Start-ScheduledTask ArgusAgent") }}
+  <p class="muted small" style="margin:.2rem 0">Sofort pushen (der Task selbst pusht nur, wenn das Intervall um ist) / Log ansehen</p>
+  {{ cmd("& C:\\ProgramData\\argus-agent\\venv\\Scripts\\argus-agent.exe run --once --force --config C:\\ProgramData\\argus-agent\\agent.json") }}
   {{ cmd("Get-Content C:\\ProgramData\\argus-agent\\agent.log -Tail 30 -Encoding UTF8") }}
   <p class="muted small" style="margin:.2rem 0">Nach Python-Wechsel: venv neu bauen (agent.json bleibt)</p>
   {{ cmd("Stop-ScheduledTask ArgusAgent; Remove-Item -Recurse -Force C:\\ProgramData\\argus-agent\\venv; iwr -useb " ~ base_url ~ "install.ps1 | iex; Update-ArgusAgent") }}
   <p class="muted small" style="margin:.8rem 0 .2rem">🐧 Linux / NAS / Raspberry Pi (als root):</p>
   <p class="muted small" style="margin:.2rem 0">Update</p>
   {{ cmd("curl -fsSL " ~ base_url ~ "install.sh | sh") }}
+  <p class="muted small" style="margin:.2rem 0">Sofort pushen (Dienst-Neustart pusht sofort)</p>
+  {{ cmd("systemctl restart argus-agent") }}
   <p class="muted small" style="margin:.2rem 0">Status / Log</p>
   {{ cmd("systemctl status argus-agent --no-pager; tail -n 30 /opt/argus-agent/agent.log") }}
   <p class="muted small" style="margin:.6rem 0 0">Windows braucht Python für alle Benutzer

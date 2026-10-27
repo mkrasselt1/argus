@@ -337,3 +337,31 @@ def test_push_systems_are_not_scanned_server_side():
             assert len(scans) == 1  # only the pushed one, no server-side error scan
             cmds = s.exec(select(AgentCommand).where(AgentCommand.system_id == sid)).all()
             assert [c.type for c in cmds] == ["rescan"]
+
+
+def test_agent_poll_reports_pending_rescan():
+    """Not-yet-due heartbeats poll /agent/poll so "Scan" works within one
+    heartbeat; the push then consumes the command."""
+    from sqlmodel import Session, select
+    from app.db import engine
+    from app.models import System
+    from app.services import enrollment, scanner
+
+    with TestClient(app) as client:
+        assert client.post("/agent/poll").status_code == 401
+        code, _ = enrollment.create_code(auto_approve=True)
+        creds = client.post("/enroll", json={"code": code, "name": "Poll"}).json()
+        headers = {"X-Client-Id": creds["client_id"], "X-Client-Token": creds["client_secret"]}
+        empty = {"packages": [], "vulnerabilities": [], "summary": {}}
+        assert client.post("/agent/poll", headers=headers).json()["rescan"] is False  # unbound
+        client.post("/ingest", json={"system": "Poll-Host", "collector": "manual",
+                                     "result": empty}, headers=headers)
+        with Session(engine) as s:
+            sid = s.exec(select(System).where(System.name == "Poll-Host")).one().id
+        assert client.post("/agent/poll", headers=headers).json()["rescan"] is False
+        scanner.request_scan(sid)
+        assert client.post("/agent/poll", headers=headers).json()["rescan"] is True
+        r = client.post("/ingest", json={"system": "Poll-Host", "collector": "manual",
+                                         "result": empty}, headers=headers)
+        assert [c["type"] for c in r.json()["commands"]] == ["rescan"]
+        assert client.post("/agent/poll", headers=headers).json()["rescan"] is False
