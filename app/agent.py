@@ -40,6 +40,9 @@ log = logging.getLogger("argus.agent")
 
 CONFIG_PATH = Path(os.environ.get("ARGUS_AGENT_CONFIG", str(Path.home() / ".argus" / "agent.json")))
 
+# Half of the Windows task's 15-min heartbeat (see _push_due).
+HEARTBEAT_SLACK_S = 7 * 60 + 30
+
 
 def _default_collector() -> str:
     return "windows" if platform.system() == "Windows" else "manual"
@@ -115,11 +118,33 @@ def _load_config() -> dict:
 
 def _save_config(cfg: dict) -> None:
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    # Atomic write: the Windows task can be killed mid-run (execution time
+    # limit, shutdown). A half-written agent.json would lose the enrollment and
+    # leave the agent dead for good, so write a temp file and swap it in.
+    tmp = CONFIG_PATH.with_name(CONFIG_PATH.name + ".tmp")
+    tmp.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     try:  # best-effort tighten permissions (POSIX)
-        os.chmod(CONFIG_PATH, 0o600)
+        os.chmod(tmp, 0o600)
     except OSError:
         pass
+    os.replace(tmp, CONFIG_PATH)
+
+
+def _setup_file_logging() -> None:
+    """Also log to agent.log next to the config (rotating).
+
+    The Windows task runs as SYSTEM without a console, so stderr is lost —
+    without a log file a failing scheduled run is invisible.
+    """
+    from logging.handlers import RotatingFileHandler
+    try:
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        h = RotatingFileHandler(CONFIG_PATH.with_name("agent.log"),
+                                maxBytes=1_000_000, backupCount=3, encoding="utf-8")
+    except OSError:
+        return
+    h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logging.getLogger().addHandler(h)
 
 
 def cmd_join(args) -> int:
@@ -240,6 +265,10 @@ def _push_once(cfg: dict, ram_creds: dict | None = None) -> dict:
     with _make_client(cfg["server"], cfg.get("fingerprint"), cfg.get("insecure", False),
                       timeout=120) as c:
         resp = c.post(f"{cfg['server']}/ingest", json=payload, headers=headers)
+    if resp.status_code == 403:
+        # e.g. "client pending" / "client revoked" — say so instead of a bare 403.
+        log.error("Server lehnt Agent ab (%s) — im Dashboard unter Agenten freigeben?",
+                  resp.text[:200])
     resp.raise_for_status()
     return resp.json()
 
@@ -273,12 +302,17 @@ def _push_due(cfg: dict) -> bool:
     last successful push. This keeps the cadence in the (centrally settable)
     agent config instead of the task definition, and tolerates a heartbeat that
     fires slightly early.
+
+    The slack is half a heartbeat: with a 15-min heartbeat and a 60-min
+    interval, a push due "in 2 minutes" happens now rather than 13 min late.
+    (A 30s slack made the cadence drift to interval + 15 min whenever the
+    collection itself took longer than 30s, which on Windows it always does.)
     """
     interval = int(cfg.get("interval") or 0)
     if interval <= 0:
         return True  # no interval configured -> always push on invocation
     last = float(cfg.get("last_push_ts") or 0)
-    return (time.time() - last) >= (interval * 60 - 30)  # 30s slack
+    return (time.time() - last) >= (interval * 60 - HEARTBEAT_SLACK_S)
 
 
 def cmd_run(args) -> int:
@@ -288,11 +322,15 @@ def cmd_run(args) -> int:
     # path directly is the robust way to point the agent at its enrollment.
     if getattr(args, "config", None):
         CONFIG_PATH = Path(args.config)
+    _setup_file_logging()
     load_builtin_collectors()
     try:
         cfg = _load_config()
     except FileNotFoundError:
         log.error("Keine Agent-Konfig unter %s — zuerst 'join' ausführen.", CONFIG_PATH)
+        return 2
+    except (OSError, ValueError):
+        log.exception("Agent-Konfig %s nicht lesbar", CONFIG_PATH)
         return 2
 
     once = bool(getattr(args, "once", False))
@@ -306,6 +344,9 @@ def cmd_run(args) -> int:
     rc = 0
     while True:
         rescan = False
+        # Gate on when the push *started*: collection can take minutes and must
+        # not push the next due time back.
+        started = time.time()
         try:
             data = _push_once(cfg, ram_creds)
             cmds = data.get("commands", []) or []
@@ -316,7 +357,7 @@ def cmd_run(args) -> int:
                 log.warning("Agent-Update verfügbar: %s -> %s", __version__, data["server_version"])
             rescan = _apply_commands(cmds, cfg)
             # Remember when we last pushed so --once can gate on the interval.
-            cfg["last_push_ts"] = time.time()
+            cfg["last_push_ts"] = started
             _save_config(cfg)
         except Exception:
             log.exception("Push fehlgeschlagen")

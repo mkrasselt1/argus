@@ -456,20 +456,38 @@ function Install-ArgusAgent {{
   param([Parameter(Mandatory=$true)][string]$Join, [string]$Extra="")
   $Server = "{server}"
   $Dir = "$env:ProgramData\\argus-agent"
+  $Exe = "$Dir\\venv\\Scripts\\argus-agent.exe"
   Write-Host "Installing Argus agent into $Dir ..."
+  # The task runs as SYSTEM. A Microsoft-Store Python (WindowsApps alias) is
+  # per-user and cannot be executed by SYSTEM -> refuse it up front.
+  $base = (& python -c "import sys;print(sys.base_prefix)" 2>$null)
+  if ($LASTEXITCODE -ne 0 -or -not $base) {{ throw "python not found in PATH - install Python (python.org, 'for all users')" }}
+  if ($base -match "WindowsApps") {{ throw "Microsoft-Store Python ($base) is not usable by SYSTEM - install Python from python.org 'for all users'" }}
+  if ($base -match "\\\\Users\\\\") {{ Write-Warning "Python is installed per-user ($base); prefer an 'all users' install so SYSTEM always finds it." }}
+  # Stop + disable an existing task while the venv is rebuilt: otherwise the
+  # heartbeat can fire mid-reinstall and fail with 0x80070002 (exe missing),
+  # and pip cannot replace a locked exe.
+  Stop-ScheduledTask -TaskName "ArgusAgent" -ErrorAction SilentlyContinue
+  Disable-ScheduledTask -TaskName "ArgusAgent" -ErrorAction SilentlyContinue | Out-Null
   python -m venv "$Dir\\venv"
+  if ($LASTEXITCODE -ne 0) {{ throw "venv creation failed" }}
   & "$Dir\\venv\\Scripts\\python.exe" -m pip install -q --upgrade pip 2>$null
-  & "$Dir\\venv\\Scripts\\pip.exe" install -q "$Server/dist/argus-agent.tar.gz"
+  & "$Dir\\venv\\Scripts\\python.exe" -m pip install -q --upgrade "$Server/dist/argus-agent.tar.gz"
+  if ($LASTEXITCODE -ne 0) {{ throw "pip install of $Server/dist/argus-agent.tar.gz failed (TLS/self-signed cert? try: -m pip install --trusted-host <host> ...)" }}
+  if (-not (Test-Path $Exe)) {{ throw "$Exe missing after install - not registering the task" }}
   $env:ARGUS_AGENT_CONFIG = "$Dir\\agent.json"
-  & "$Dir\\venv\\Scripts\\argus-agent.exe" join $Join --kind windows --collector windows --interval 60
+  & $Exe join $Join --kind windows --collector windows --interval 60
+  if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$Dir\\agent.json")) {{ throw "join failed - not registering the task" }}
   # Heartbeat model: the scheduler just fires often; the agent decides whether
   # its own interval has elapsed (`run --once` is a no-op when not yet due).
   # So the cadence lives in the (centrally settable) agent config, and the task
   # is self-healing against crashes, sleep/hibernate and reboots.
   # The task runs as SYSTEM and may not see a freshly set env var, so the config
   # path is passed directly with --config (robust, no cmd wrapper needed).
-  $action = New-ScheduledTaskAction -Execute "$Dir\\venv\\Scripts\\argus-agent.exe" -Argument "run --once --config `"$Dir\\agent.json`""
+  # Logs go to $Dir\\agent.log (the SYSTEM task has no console).
+  $action = New-ScheduledTaskAction -Execute $Exe -Argument "run --once --config `"$Dir\\agent.json`"" -WorkingDirectory $Dir
   $atStartup = New-ScheduledTaskTrigger -AtStartup
+  $atStartup.Delay = "PT2M"  # network is usually not up right at boot
   $beat = New-ScheduledTaskTrigger -Once -At (Get-Date) `
       -RepetitionInterval (New-TimeSpan -Minutes 15) -RepetitionDuration (New-TimeSpan -Days 3650)
   $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries `
@@ -480,7 +498,29 @@ function Install-ArgusAgent {{
   Register-ScheduledTask -TaskName "ArgusAgent" -Action $action -Trigger $atStartup,$beat `
       -Settings $settings -Principal $principal -Force | Out-Null
   Start-ScheduledTask -TaskName "ArgusAgent"
-  Write-Host "Scheduled task 'ArgusAgent' installed (15-min heartbeat, self-gated, self-healing) and started."
+  # Verify the task really runs as SYSTEM instead of trusting registration.
+  $deadline = (Get-Date).AddMinutes(10)
+  do {{ Start-Sleep -Seconds 5 }} while ((Get-ScheduledTask -TaskName "ArgusAgent").State -eq "Running" -and (Get-Date) -lt $deadline)
+  $res = (Get-ScheduledTaskInfo -TaskName "ArgusAgent").LastTaskResult
+  if ($res -eq 0) {{
+    Write-Host "Scheduled task 'ArgusAgent' installed (15-min heartbeat, self-gated) - first run OK."
+  }} else {{
+    Write-Warning ("First task run returned 0x{{0:X}} - see $Dir\\agent.log" -f $res)
+    if (Test-Path "$Dir\\agent.log") {{ Get-Content "$Dir\\agent.log" -Tail 20 }}
+  }}
+}}
+
+function Test-ArgusAgent {{
+  # Diagnostics: task definition, last result, exe presence, log tail.
+  $Dir = "$env:ProgramData\\argus-agent"
+  $t = Get-ScheduledTask -TaskName "ArgusAgent" -ErrorAction SilentlyContinue
+  if (-not $t) {{ Write-Warning "Task 'ArgusAgent' not registered"; return }}
+  $a = $t.Actions[0]
+  Write-Host "Execute : $($a.Execute)  (exists: $(Test-Path $a.Execute.Trim([char]34)))"
+  Write-Host "Args    : $($a.Arguments)"
+  $i = Get-ScheduledTaskInfo -TaskName "ArgusAgent"
+  Write-Host ("Last run: $($i.LastRunTime)  result 0x{{0:X}}  next: $($i.NextRunTime)" -f $i.LastTaskResult)
+  if (Test-Path "$Dir\\agent.log") {{ Get-Content "$Dir\\agent.log" -Tail 20 }}
 }}
 """
 

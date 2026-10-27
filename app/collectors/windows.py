@@ -250,7 +250,7 @@ def _latest_hotfix() -> str | None:
             ["powershell", "-NoProfile", "-Command",
              "(Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 1)."
              "HotFixID"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace",
         )
         if proc.returncode == 0 and proc.stdout.strip():
             return proc.stdout.strip()

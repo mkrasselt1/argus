@@ -149,6 +149,22 @@ immer passend zur Server-Version), meldet ihn an und registriert einen Dienst.
   und der Agent ist gegen Absturz/Standby/Reboot selbstheilend. Der Task läuft als
   SYSTEM und bekommt den Config-Pfad direkt per `run --once --config <pfad>`
   übergeben (robust, unabhängig von Umgebungsvariablen-Propagation).
+  Fälligkeit wird ab *Start* des letzten Pushs gemessen, mit halbem Herzschlag
+  (7,5 min) Toleranz — sonst driftet ein 60-min-Intervall durch die Sammeldauer
+  auf 75 min. Der Startup-Trigger wartet 2 min aufs Netz.
+  - **Log:** `%ProgramData%\argus-agent\agent.log` (rotierend, auch bei
+    Linux-Agenten neben der `agent.json`) — der SYSTEM-Task hat keine Konsole.
+  - **Installer** bricht bei Fehlern ab (kein Python / Microsoft-Store-Python,
+    `pip install` oder `join` fehlgeschlagen, exe fehlt), statt einen Task auf eine
+    nicht vorhandene exe zu registrieren (Ereignis „Fehlerwert 2147942402“ =
+    0x80070002 = Datei nicht gefunden). Während der Neuinstallation ist der Task
+    deaktiviert; danach prüft der Installer den ersten Lauf als SYSTEM.
+  - **Diagnose:** `iwr -useb https://argus.example/install.ps1 | iex; Test-ArgusAgent`
+    zeigt Task-Aktion (exe vorhanden?), letztes Ergebnis und Log-Ende.
+  - `agent.json` wird atomar geschrieben (Abbruch mitten im Lauf zerstört die
+    Anmeldung nicht). Python am besten „für alle Benutzer“ installieren.
+  - **403 auf `/ingest`** = Agent nicht freigegeben/gesperrt (Dashboard → Agenten);
+    der Agent loggt den Grund.
 Der Server kann über die Poll-Antwort steuern (rescan, Intervall, Portliste,
 zu scannende **Subnetze/Hosts** (`targets`, zentral auf der System-Seite setzbar),
 Collector-Config) und meldet Agent-Updates. Die zentral gesetzte Config wird im
