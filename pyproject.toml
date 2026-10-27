@@ -1,6 +1,8 @@
 [project]
 name = "argus"
-version = "0.1.0"
+# Single source of truth: app/__init__.py. A fixed version here made pip treat
+# every agent update as "already satisfied" and keep the old code.
+dynamic = ["version"]
 description = "Argus — read-only security & asset management dashboard for deployed systems (hosts, NAS, routers, Docker)"
 requires-python = ">=3.11"
 dependencies = [
@@ -33,3 +35,6 @@ include = ["app*"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.setuptools.dynamic]
+version = {attr = "app.__version__"}
