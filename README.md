@@ -30,9 +30,11 @@ Argus-Server (FastAPI + SQLModel/SQLite, Web-UI mit Login + JSON-API)
   ├─ Enrollment   Join-Token, Pro-Client-Secret, Freigeben/Sperren, Install-Skripte
   ├─ Credentials  Zero-Knowledge (auf Agent-Key versiegelt, Server kann nicht lesen)
   ├─ SystemSummary  denormalisierter Rollup → schnelles Dashboard bei vielen Geräten
+  ├─ Integrations-API  /api/overview (+ Rescan) per Bearer-Token → Home Assistant
   └─ Scheduler    periodischer Scan + tägliches Scan-Pruning (Retention)
 
 Agent (pip-Paket vom Server):  argus-agent join | run | set-cred
+Home Assistant (HACS):         custom_components/argus  ── pollt /api/overview
 ```
 
 - Neue Systemtypen = ein Collector in [`app/collectors/`](app/collectors/)
@@ -243,6 +245,52 @@ Split-Knowledge). Zwei Eingabewege (beide zero-knowledge):
 
 Details/Bedrohungsmodell: [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## Home Assistant Integration
+
+Im Repo liegt eine Custom-Integration [`custom_components/argus`](custom_components/argus)
+(HACS-kompatibel). Sie pollt **read-only** `GET /api/overview` und legt an:
+
+- **Server-Gerät** „Argus (host)": Sensoren *Systeme*, *Systeme mit Updates*,
+  *Ausstehende Updates*, *Kritische/Hohe CVEs*, *Systeme mit EOL-Betriebssystem*,
+  *Scan-Fehler*, *Agenten*, *Agenten zur Freigabe* (Attribut `systems` listet die
+  betroffenen Systemnamen) + Button **Alle Systeme scannen**.
+- **Ein Gerät pro Argus-System** (über das Server-Gerät verknüpft): Sensoren
+  *Ausstehende Updates*, *Kritische/Hohe CVEs*, *OS-Support*, *Komponenten*,
+  *Letzter Scan*, *Scan-Status*; Binärsensoren *Update verfügbar*,
+  *Verwundbar (kritisch/hoch)*, *Betriebssystem End-of-Life*, *Scan-Fehler*;
+  Button **Neu scannen** (Push-Systeme bekommen einen Rescan-Befehl beim
+  nächsten Agent-Poll). Neue Systeme erscheinen automatisch; Geräte gelöschter
+  Systeme lassen sich in HA entfernen.
+
+**Einrichtung**
+
+1. Server: `SECSCAN_API_TOKEN=<langes zufälliges Token>` setzen (z.B.
+   `python -c "import secrets; print(secrets.token_urlsafe(32))"`) und neu starten.
+2. HA: Repo in HACS als *benutzerdefiniertes Repository* (Typ *Integration*)
+   hinzufügen und „Argus" installieren — oder `custom_components/argus` nach
+   `<config>/custom_components/` kopieren. HA neu starten.
+3. *Einstellungen → Geräte & Dienste → Integration hinzufügen → Argus*: URL
+   (z.B. `https://argus.example.com`) + API-Token. Abfrageintervall
+   (Standard 300 s) unter *Optionen*.
+
+Das Token öffnet **nur** `/api/*` (keine UI, keine Verwaltung) und erlaubt außer
+Lesen nur das Anstoßen eines Rescans (`POST /api/systems/{id}/scan`,
+`POST /api/scan-all`). Zugangsnotizen und Collector-Konfigurationen sind nicht
+Teil von `/api/overview`. Beispiel-Automation (Entity-ID ggf. an deine
+Installation anpassen — siehe *Einstellungen → Entitäten*):
+
+```yaml
+trigger:
+  - platform: numeric_state
+    entity_id: sensor.argus_argus_example_com_kritische_cves
+    above: 0
+action:
+  - service: notify.mobile_app_handy
+    data:
+      message: "Argus: {{ states('sensor.argus_argus_example_com_kritische_cves') }} kritische CVEs
+        ({{ state_attr('sensor.argus_argus_example_com_kritische_cves', 'systems') | join(', ') }})"
+```
+
 ## Login / Konfiguration
 
 Setze `SECSCAN_ADMIN_PASSWORD`, dann verlangt die Web-UI ein Login
@@ -256,6 +304,7 @@ Setze `SECSCAN_ADMIN_PASSWORD`, dann verlangt die Web-UI ein Login
 | `SECSCAN_SECURE_COOKIES` | Session-Cookie als `Secure` markieren (Standard 1; nur für lokales HTTP auf 0) |
 | `SECSCAN_INGEST_TOKEN` | Shared-Token für Push (optional, pro-Client-Auth bevorzugt) |
 | `SECSCAN_CRYPTO_KEY` | Fernet-Key für serverseitige Verschlüsselung (sonst abgeleitet; Warnung im Log) |
+| `SECSCAN_API_TOKEN` | Bearer-Token für `/api/*` (Home-Assistant-Integration; leer = API nur mit UI-Login) |
 | `SECSCAN_AGENT_TOKEN` | Agent/Relay-Modus aktivieren (`/agent/collect`) |
 | `SECSCAN_AGENT_ALLOWED_COLLECTORS` | Erlaubte Collectors für `/agent/collect` (Default ohne `relay`) |
 | `SECSCAN_PUBLIC_URL` | Öffentliche Basis-URL für Install-Skripte/Join-Token (statt Host-Header) |
@@ -273,7 +322,9 @@ Setze `SECSCAN_ADMIN_PASSWORD`, dann verlangt die Web-UI ein Login
 - **CSRF:** Alle zustandsändernden UI-Formulare tragen ein Per-Session-CSRF-Token
   (verstecktes Feld, serverseitig geprüft). Maschinen-Endpunkte (`/ingest`,
   `/enroll`, `/agent/collect`, `/credentials/upload`) nutzen Token-/Client-Auth
-  statt Cookies und sind ausgenommen. Session-Cookie: `Secure` + `SameSite=Lax`,
+  statt Cookies und sind ausgenommen. Die Integrations-Aktionen
+  (`POST /api/systems/{id}/scan`, `/api/scan-all`) akzeptieren **nur** das
+  Bearer-Token (kein Cookie → kein CSRF-Risiko). Session-Cookie: `Secure` + `SameSite=Lax`,
   global `Referrer-Policy: no-referrer`. `POST /logout`.
 - **Agent↔System-Bindung:** Ein pro-Client-authentifizierter Agent wird beim
   ersten Push fest an **ein** System gebunden; spätere Pushes auf ein anderes
@@ -391,6 +442,10 @@ APP_VERSION=$(git rev-parse --short HEAD) docker compose up -d --build
 ```bash
 pip install -e ".[dev]"
 pytest -q
+
+# Home-Assistant-Integration (eigene venv empfohlen, zieht Home Assistant):
+pip install pytest-homeassistant-custom-component
+pytest tests_homeassistant
 ```
 
 ## Sicherheitsprinzipien

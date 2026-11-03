@@ -140,10 +140,23 @@ def verify_csrf(request: Request, csrf_token: str = Form("")) -> None:
         raise HTTPException(status_code=403, detail="CSRF token missing or invalid")
 
 
+def _bearer_ok(request: Request) -> bool:
+    """True if the request carries the configured integration API token."""
+    if not settings.api_enabled():
+        return False
+    auth = request.headers.get("authorization", "")
+    scheme, _, token = auth.partition(" ")
+    return scheme.lower() == "bearer" and hmac.compare_digest(
+        token.strip().encode(), settings.api_token.encode()
+    )
+
+
 async def _auth_guard(request: Request, call_next):
     # Make a CSRF token available to every rendered form (per session).
     _ensure_csrf_token(request)
-    if settings.auth_enabled() and not request.url.path.startswith(_AUTH_EXEMPT):
+    api_token_ok = request.url.path.startswith("/api/") and _bearer_ok(request)
+    if (settings.auth_enabled() and not api_token_ok
+            and not request.url.path.startswith(_AUTH_EXEMPT)):
         if not request.session.get("auth"):
             if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
                 return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
@@ -1115,7 +1128,7 @@ def api_systems(session: Session = Depends(get_session)):
                 "hostname": s.hostname,
                 "collector": s.collector,
                 "last_scan": last.started_at.isoformat() if last else None,
-                "vulnerabilities": len(_severity_counts(session, last.id)) if last else 0,
+                "vulnerabilities": sum(_severity_counts(session, last.id).values()) if last else 0,
             }
         )
     return JSONResponse(out)
@@ -1172,3 +1185,99 @@ def api_system(system_id: int, session: Session = Depends(get_session)):
             ],
         }
     )
+
+
+# ---- integration API (Home Assistant & co.) ------------------------------
+# One cheap call that returns everything a dashboard/smart-home integration
+# needs: per-system rollups (from SystemSummary, no N+1) plus totals. Access
+# notes and collector configs are deliberately NOT included.
+
+def _require_api_token(request: Request) -> None:
+    """Token-only guard for API actions (no cookie -> no CSRF exposure)."""
+    if not settings.api_enabled():
+        raise HTTPException(status_code=404, detail="API token not configured")
+    if not _bearer_ok(request):
+        raise HTTPException(status_code=401, detail="invalid API token")
+
+
+def _iso(dt) -> str | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
+@app.get("/api/overview")
+def api_overview(session: Session = Depends(get_session)):
+    from app.models import SystemSummary
+
+    systems = session.exec(select(System).order_by(System.name)).all()
+    summaries = {s.system_id: s for s in session.exec(select(SystemSummary)).all()}
+    scan_ids = [s.last_scan_id for s in summaries.values() if s.last_scan_id]
+    scan_summaries = (
+        {sc.id: (sc.summary or {}) for sc in session.exec(select(Scan).where(Scan.id.in_(scan_ids))).all()}
+        if scan_ids else {}
+    )
+    clients = session.exec(select(Client)).all()
+    out = []
+    for s in systems:
+        summ = summaries.get(s.id)
+        scan_summary = scan_summaries.get(summ.last_scan_id, {}) if summ else {}
+        os_support = scan_summary.get("os_support")
+        out.append({
+            "id": s.id,
+            "name": s.name,
+            "kind": s.kind.value,
+            "hostname": s.hostname,
+            "ip_address": s.ip_address,
+            "group": s.group,
+            "tags": s.tags or [],
+            "web_url": s.web_url,
+            "collector": s.collector,
+            "enabled": s.enabled,
+            "discovered": s.discovered,
+            "last_scan_at": _iso(summ.last_scan_at) if summ else None,
+            "status": summ.status if summ else None,
+            "packages": summ.packages if summ else 0,
+            "updates": summ.updates if summ else 0,
+            "critical": summ.critical if summ else 0,
+            "high": summ.high if summ else 0,
+            "os_support": os_support,
+            "os_latest": scan_summary.get("os_latest"),
+            "eol": os_support == "END-OF-LIFE",
+        })
+    totals = {
+        "systems": len(out),
+        "systems_with_updates": sum(1 for r in out if r["updates"]),
+        "updates": sum(r["updates"] for r in out),
+        "critical": sum(r["critical"] for r in out),
+        "high": sum(r["high"] for r in out),
+        "eol": sum(1 for r in out if r["eol"]),
+        "scan_errors": sum(1 for r in out if r["status"] == ScanStatus.error.value),
+        "agents": len(clients),
+        "agents_pending": sum(1 for c in clients if c.status == ClientStatus.pending),
+    }
+    return JSONResponse({
+        "version": __version__,
+        "generated_at": _iso(utcnow()),
+        "totals": totals,
+        "systems": out,
+    })
+
+
+@app.post("/api/systems/{system_id}/scan")
+def api_trigger_scan(system_id: int, background: BackgroundTasks, request: Request,
+                     session: Session = Depends(get_session)):
+    _require_api_token(request)
+    if session.get(System, system_id) is None:
+        raise HTTPException(status_code=404, detail="system not found")
+    background.add_task(scanner.request_scan, system_id)
+    return {"ok": True, "system_id": system_id}
+
+
+@app.post("/api/scan-all")
+def api_trigger_scan_all(background: BackgroundTasks, request: Request):
+    _require_api_token(request)
+    background.add_task(scanner.run_all_enabled)
+    return {"ok": True}

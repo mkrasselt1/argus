@@ -114,6 +114,10 @@ dieses Modell ersetzt; bestehende Credentials einmalig neu erfassen.
 - **Updates**: Server per Image-Tag versioniert; Agenten melden Version, Update
   via Install-Skript/Paket (lean Agent-Paket als Ziel: nur nötige Deps).
 - **Monitoring**: `/healthz`, Scan-Fehlerquote, Ingest-Latenz, DB-Größe.
+- **Integrationen** (Home Assistant): eigenes `SECSCAN_API_TOKEN`, getrennt vom
+  Admin-Login. Es öffnet nur `/api/*` (lesend + Rescan anstoßen), nie die UI oder
+  Verwaltungs-/Credential-Routen; `/api/overview` liefert keine Zugangsnotizen
+  oder Collector-Configs. Token-Rotation = Env ändern + HA-Reauth.
 
 ## 6. Umsetzungsreihenfolge (Vorschlag)
 

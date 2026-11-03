@@ -7,3 +7,5 @@ venv/
 .env
 tests/
 *.db
+tests_homeassistant/
+custom_components/

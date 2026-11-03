@@ -1,0 +1,125 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Argus",
+        "description": "Connect Home Assistant to your Argus server. The token is the value of `SECSCAN_API_TOKEN` on the server.",
+        "data": {
+          "url": "URL",
+          "token": "API token",
+          "verify_ssl": "Verify SSL certificate"
+        },
+        "data_description": {
+          "url": "e.g. https://argus.example.com"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate Argus",
+        "description": "The API token for {url} was rejected. Please enter a new token.",
+        "data": {
+          "token": "API token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the Argus server (or it is too old — /api/overview needs Argus ≥ 1.2.0).",
+      "invalid_auth": "Invalid API token, or none set on the server (SECSCAN_API_TOKEN).",
+      "invalid_url": "URL must start with http:// or https://."
+    },
+    "abort": {
+      "already_configured": "This Argus server is already configured.",
+      "reauth_successful": "Re-authentication successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Argus options",
+        "data": {
+          "scan_interval": "Polling interval (seconds)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "systems": {
+        "name": "Systems"
+      },
+      "systems_with_updates": {
+        "name": "Systems with updates"
+      },
+      "updates": {
+        "name": "Pending updates"
+      },
+      "critical": {
+        "name": "Critical CVEs"
+      },
+      "high": {
+        "name": "High CVEs"
+      },
+      "eol": {
+        "name": "Systems with end-of-life OS"
+      },
+      "scan_errors": {
+        "name": "Scan errors"
+      },
+      "agents": {
+        "name": "Agents"
+      },
+      "agents_pending": {
+        "name": "Agents awaiting approval"
+      },
+      "system_updates": {
+        "name": "Pending updates"
+      },
+      "system_critical": {
+        "name": "Critical CVEs"
+      },
+      "system_high": {
+        "name": "High CVEs"
+      },
+      "system_packages": {
+        "name": "Components"
+      },
+      "system_last_scan": {
+        "name": "Last scan"
+      },
+      "system_scan_status": {
+        "name": "Scan status",
+        "state": {
+          "pending": "Pending",
+          "running": "Running",
+          "ok": "OK",
+          "error": "Error",
+          "none": "Never scanned"
+        }
+      },
+      "system_os_support": {
+        "name": "OS support"
+      }
+    },
+    "binary_sensor": {
+      "update_available": {
+        "name": "Update available"
+      },
+      "vulnerable": {
+        "name": "Vulnerable (critical/high)"
+      },
+      "eol": {
+        "name": "OS end-of-life"
+      },
+      "scan_error": {
+        "name": "Scan error"
+      }
+    },
+    "button": {
+      "scan_all": {
+        "name": "Scan all systems"
+      },
+      "scan": {
+        "name": "Rescan"
+      }
+    }
+  }
+}

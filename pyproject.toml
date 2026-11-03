@@ -38,3 +38,8 @@ line-length = 100
 
 [tool.setuptools.dynamic]
 version = {attr = "app.__version__"}
+
+[tool.pytest.ini_options]
+# Home Assistant integration tests live in tests_homeassistant/ and need
+# pytest-homeassistant-custom-component (see that folder's README).
+testpaths = ["tests"]

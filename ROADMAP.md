@@ -99,4 +99,6 @@ Design-Skizze:
 - [x] Systeme: Gruppen, Tags, Umbenennen/Bearbeiten/Löschen, IP-Anzeige.
 - [x] „Im Netzwerk gefunden"-Ansicht pro Discovery-Agent (Geräte + Dienste).
 - [x] Poll-Intervall per Server-Befehl steuerbar (set_interval, z.B. beim Debuggen).
+- [x] Home-Assistant-Integration (HACS, `custom_components/argus`) über
+      `/api/overview` + Bearer-`SECSCAN_API_TOKEN`; Rescan-Buttons.
 - [x] Agent-Selbst-Update-Check (Server meldet Version; Modus manual[default]/auto).

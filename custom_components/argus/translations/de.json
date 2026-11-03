@@ -1,0 +1,125 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Argus",
+        "description": "Verbinde Home Assistant mit deinem Argus-Server. Das Token ist der Wert von `SECSCAN_API_TOKEN` auf dem Server.",
+        "data": {
+          "url": "URL",
+          "token": "API-Token",
+          "verify_ssl": "SSL-Zertifikat prüfen"
+        },
+        "data_description": {
+          "url": "z.B. https://argus.example.com"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Argus neu anmelden",
+        "description": "Das API-Token für {url} wurde abgelehnt. Bitte neues Token eingeben.",
+        "data": {
+          "token": "API-Token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Argus-Server nicht erreichbar (oder zu alt — /api/overview benötigt Argus ≥ 1.2.0).",
+      "invalid_auth": "API-Token ungültig oder auf dem Server nicht gesetzt (SECSCAN_API_TOKEN).",
+      "invalid_url": "URL muss mit http:// oder https:// beginnen."
+    },
+    "abort": {
+      "already_configured": "Dieser Argus-Server ist bereits eingerichtet.",
+      "reauth_successful": "Erneute Anmeldung erfolgreich."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Argus-Optionen",
+        "data": {
+          "scan_interval": "Abfrageintervall (Sekunden)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "systems": {
+        "name": "Systeme"
+      },
+      "systems_with_updates": {
+        "name": "Systeme mit Updates"
+      },
+      "updates": {
+        "name": "Ausstehende Updates"
+      },
+      "critical": {
+        "name": "Kritische CVEs"
+      },
+      "high": {
+        "name": "Hohe CVEs"
+      },
+      "eol": {
+        "name": "Systeme mit EOL-Betriebssystem"
+      },
+      "scan_errors": {
+        "name": "Scan-Fehler"
+      },
+      "agents": {
+        "name": "Agenten"
+      },
+      "agents_pending": {
+        "name": "Agenten zur Freigabe"
+      },
+      "system_updates": {
+        "name": "Ausstehende Updates"
+      },
+      "system_critical": {
+        "name": "Kritische CVEs"
+      },
+      "system_high": {
+        "name": "Hohe CVEs"
+      },
+      "system_packages": {
+        "name": "Komponenten"
+      },
+      "system_last_scan": {
+        "name": "Letzter Scan"
+      },
+      "system_scan_status": {
+        "name": "Scan-Status",
+        "state": {
+          "pending": "Wartend",
+          "running": "Läuft",
+          "ok": "OK",
+          "error": "Fehler",
+          "none": "Noch nie gescannt"
+        }
+      },
+      "system_os_support": {
+        "name": "OS-Support"
+      }
+    },
+    "binary_sensor": {
+      "update_available": {
+        "name": "Update verfügbar"
+      },
+      "vulnerable": {
+        "name": "Verwundbar (kritisch/hoch)"
+      },
+      "eol": {
+        "name": "Betriebssystem End-of-Life"
+      },
+      "scan_error": {
+        "name": "Scan-Fehler"
+      }
+    },
+    "button": {
+      "scan_all": {
+        "name": "Alle Systeme scannen"
+      },
+      "scan": {
+        "name": "Neu scannen"
+      }
+    }
+  }
+}

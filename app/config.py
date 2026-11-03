@@ -108,6 +108,15 @@ class Settings(BaseSettings):
     # Auto-create unknown systems on first push (vs. requiring them pre-defined).
     ingest_auto_register: bool = True
 
+    # Read-only API token for integrations (e.g. Home Assistant). When set,
+    # /api/* accepts "Authorization: Bearer <token>" without a UI login, and
+    # the token-only endpoints POST /api/systems/{id}/scan and /api/scan-all
+    # let the integration request a rescan. Empty = API needs a UI session.
+    api_token: str = ""
+
+    def api_enabled(self) -> bool:
+        return bool(self.api_token)
+
     def agent_enabled(self) -> bool:
         return bool(self.agent_token)
 
