@@ -17,6 +17,8 @@ services:
       SECSCAN_SECRET_KEY: "${SECSCAN_SECRET_KEY:?set a random session secret}"
       SECSCAN_CRYPTO_KEY: "${SECSCAN_CRYPTO_KEY:-}"
       SECSCAN_INGEST_TOKEN: "${SECSCAN_INGEST_TOKEN:?set an ingest token}"
+      # Optional: bearer token for /api/* (Home Assistant integration).
+      SECSCAN_API_TOKEN: "${SECSCAN_API_TOKEN:-}"
     volumes:
       # Persistent, revision-safe database (survives redeploys).
       - secscan-data:/data
