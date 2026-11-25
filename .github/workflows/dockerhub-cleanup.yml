@@ -1,0 +1,39 @@
+name: Clean up old Docker Hub tags
+
+# Runs after every successful image build and on demand (Actions -> Run
+# workflow, optionally as dry run). Keeps `latest`, the newest KEEP_RELEASES
+# vX.Y.Z tags and their vX.Y tags; deletes all other tags.
+# Needs DOCKERHUB_TOKEN with "Read, Write, Delete" permission.
+
+on:
+  workflow_run:
+    workflows: ["Build & publish Docker image"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only list what would be deleted"
+        type: boolean
+        default: true
+      keep_releases:
+        description: "Number of vX.Y.Z releases to keep"
+        default: "2"
+
+concurrency:
+  group: dockerhub-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prune tags
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/argus
+          KEEP_RELEASES: ${{ inputs.keep_releases || '2' }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+        run: python3 .github/scripts/dockerhub_cleanup.py

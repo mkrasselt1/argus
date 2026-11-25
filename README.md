@@ -405,6 +405,13 @@ nicht, `latest` ist also immer ein echtes Release. Ein Release neu bauen: Action
 *Run workflow* → bei „Use workflow from“ den Tag wählen. Repo-Secrets setzen:
 `DOCKERHUB_USERNAME` und `DOCKERHUB_TOKEN`. (GHCR-Variante ist im Workflow auskommentiert.)
 
+**Aufräumen**: [.github/workflows/dockerhub-cleanup.yml](.github/workflows/dockerhub-cleanup.yml)
+läuft nach jedem erfolgreichen Build und behält auf Docker Hub nur `latest`, die
+letzten **2** Releases (`vX.Y.Z`) und deren `vX.Y`; alles andere (ältere
+Releases, `main`, Tags ohne `v`) wird gelöscht. Manuell: Actions → *Clean up old
+Docker Hub tags* → *Run workflow* (Standard: Probelauf, `keep_releases` wählbar).
+Dafür braucht `DOCKERHUB_TOKEN` die Berechtigung **Read, Write, Delete**.
+
 ## Deployment in Plesk (Docker-Erweiterung)
 
 Plesks Docker läuft **image-basiert** — ein veröffentlichtes Image ist hier der
